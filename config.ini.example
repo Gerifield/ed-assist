@@ -1,0 +1,25 @@
+; Elite Dangerous Status Helper Configuration
+[general]
+; Custom path to Status.json.
+; If left empty or omitted, ed-assist auto-determines the path:
+; Windows: %USERPROFILE%\Saved Games\Frontier Developments\Elite Dangerous\Status.json
+; Linux:   $HOME/Saved Games/Frontier Developments/Elite Dangerous/Status.json
+status_file = 
+
+; Update detection mode:
+; watch = event-driven via OS notifications (0% CPU when idle / docked)
+; poll  = periodic polling every poll_interval_ms
+mode = watch
+
+; Polling interval in milliseconds (used when mode = poll, default: 250ms = 1/4 second)
+poll_interval_ms = 250
+
+; Quick retry settings in case the game is midway writing the file or holding a file lock
+max_retries = 3
+; Delay/wait time between retries: accepts milliseconds integer or duration string (e.g. 25, 25ms, 50ms)
+retry_time_ms = 25
+; alias: retry_delay_ms = 25 / retry_delay = 25ms
+
+; Logging configuration (debug, info, warn, error)
+loglevel = info
+; logfile = ed-assist.log
