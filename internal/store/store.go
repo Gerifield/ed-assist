@@ -133,6 +133,18 @@ func (s *Store) initSchema() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_targeted_at ON targeted_systems(targeted_at DESC, id DESC);
 	CREATE INDEX IF NOT EXISTS idx_targeted_addr ON targeted_systems(system_address);
+
+	-- Deduplicate any existing duplicate rows before creating unique indexes
+	DELETE FROM visited_systems WHERE id NOT IN (
+		SELECT MIN(id) FROM visited_systems GROUP BY visited_at, system_address, system_name
+	);
+	DELETE FROM targeted_systems WHERE id NOT IN (
+		SELECT MIN(id) FROM targeted_systems GROUP BY targeted_at, system_address, system_name
+	);
+
+	-- Enforce uniqueness by timestamp and system identity so backfills never duplicate rows
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_visited_unique ON visited_systems(visited_at, system_address, system_name);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_targeted_unique ON targeted_systems(targeted_at, system_address, system_name);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -146,6 +158,23 @@ func (s *Store) loadLastKnown() {
 	// Query the most recent targeted system
 	row = s.db.QueryRow("SELECT system_name, system_address FROM targeted_systems ORDER BY targeted_at DESC, id DESC LIMIT 1")
 	_ = row.Scan(&s.lastTargetName, &s.lastTargetAddr)
+}
+
+// GetLatestVisitedTime returns the timestamp of the newest visited system record, or zero time if empty.
+func (s *Store) GetLatestVisitedTime() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var visitedAtStr string
+	row := s.db.QueryRow("SELECT visited_at FROM visited_systems ORDER BY visited_at DESC, id DESC LIMIT 1")
+	if err := row.Scan(&visitedAtStr); err != nil {
+		return time.Time{}
+	}
+
+	if t, err := time.Parse(time.RFC3339, visitedAtStr); err == nil {
+		return t
+	}
+	return time.Time{}
 }
 
 // RecordVisited stores a visited system and prunes the table to the latest 100 entries.
@@ -168,7 +197,7 @@ func (s *Store) RecordVisited(v VisitedSystem) error {
 	}
 
 	query := `
-	INSERT INTO visited_systems (
+	INSERT OR IGNORE INTO visited_systems (
 		system_name, system_address, star_pos_x, star_pos_y, star_pos_z,
 		allegiance, economy, government, security, population, body_name,
 		jump_dist, visited_at, raw_json
@@ -182,6 +211,12 @@ func (s *Store) RecordVisited(v VisitedSystem) error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed inserting visited system: %w", err)
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		// Entry already exists in database with same timestamp and system identity
+		return nil
 	}
 
 	id, _ := res.LastInsertId()
@@ -220,7 +255,7 @@ func (s *Store) RecordTargeted(t TargetedSystem) error {
 	}
 
 	query := `
-	INSERT INTO targeted_systems (
+	INSERT OR IGNORE INTO targeted_systems (
 		system_name, system_address, body_id, targeted_at, raw_json
 	) VALUES (?, ?, ?, ?, ?);
 	`
@@ -228,6 +263,12 @@ func (s *Store) RecordTargeted(t TargetedSystem) error {
 	res, err := s.db.Exec(query, t.SystemName, t.SystemAddress, t.BodyID, targetedAtStr, t.RawJSON)
 	if err != nil {
 		return fmt.Errorf("failed inserting targeted system: %w", err)
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		// Entry already exists in database
+		return nil
 	}
 
 	id, _ := res.LastInsertId()

@@ -136,6 +136,8 @@ func (t *Tracker) backfillRecentJournals() {
 	// Sort files by name (which has ISO date embedded) ascending
 	sort.Strings(files)
 
+	latestDBTime := t.store.GetLatestVisitedTime()
+
 	// Take up to the last 5 journal files to backfill up to 100 systems
 	startIdx := 0
 	if len(files) > 5 {
@@ -143,6 +145,13 @@ func (t *Tracker) backfillRecentJournals() {
 	}
 
 	for _, f := range files[startIdx:] {
+		// If we already have recorded visits in DB and this journal file was last modified
+		// before our newest DB entry, skip reading the whole file.
+		if !latestDBTime.IsZero() {
+			if fi, err := os.Stat(f); err == nil && fi.ModTime().Before(latestDBTime.Add(-10*time.Second)) {
+				continue
+			}
+		}
 		t.parseJournalFile(f, false)
 	}
 

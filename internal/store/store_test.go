@@ -145,3 +145,54 @@ func TestStorePruningMax100(t *testing.T) {
 		t.Fatalf("expected exactly 100 targeted systems due to pruning, got %d", len(targeted))
 	}
 }
+
+func TestStoreDuplicateTimestampSkipped(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_dedup.db")
+
+	s, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("failed creating store: %v", err)
+	}
+	defer s.Close()
+
+	visitTime := time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)
+	v1 := VisitedSystem{
+		SystemName:    "Sol",
+		SystemAddress: 12345,
+		VisitedAt:     visitTime,
+	}
+
+	if err := s.RecordVisited(v1); err != nil {
+		t.Fatalf("failed recording initial visit: %v", err)
+	}
+
+	// Insert intermediate visit
+	v2 := VisitedSystem{
+		SystemName:    "Alpha Centauri",
+		SystemAddress: 67890,
+		VisitedAt:     visitTime.Add(time.Hour),
+	}
+	if err := s.RecordVisited(v2); err != nil {
+		t.Fatalf("failed recording second visit: %v", err)
+	}
+
+	// Now try to re-record v1 (e.g. from backfill re-reading journal)
+	if err := s.RecordVisited(v1); err != nil {
+		t.Fatalf("unexpected error recording duplicate: %v", err)
+	}
+
+	visited, err := s.GetVisited(10)
+	if err != nil {
+		t.Fatalf("failed getting visited systems: %v", err)
+	}
+	if len(visited) != 2 {
+		t.Fatalf("expected 2 visited systems (duplicate skipped), got %d", len(visited))
+	}
+
+	latestTime := s.GetLatestVisitedTime()
+	if !latestTime.Equal(v2.VisitedAt) {
+		t.Errorf("expected latest time %v, got %v", v2.VisitedAt, latestTime)
+	}
+}
+

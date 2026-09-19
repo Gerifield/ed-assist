@@ -118,3 +118,75 @@ func TestTrackerVisitedFromJournal(t *testing.T) {
 		t.Errorf("expected Barnard's Star, got %s", visited[0].SystemName)
 	}
 }
+
+func TestTrackerBackfillRestartDoesNotDuplicate(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	statusPath := filepath.Join(tmpDir, "Status.json")
+	journalFile := filepath.Join(tmpDir, "Journal.2024-03-01T120000.01.log")
+
+	// 1. Setup initial journal
+	initialEntries := `{"timestamp":"2024-03-01T12:00:00Z", "event":"Location", "StarSystem":"Sol", "SystemAddress":1234567, "StarPos":[0.0,0.0,0.0]}
+{"timestamp":"2024-03-01T12:05:00Z", "event":"FSDJump", "StarSystem":"Alpha Centauri", "SystemAddress":7654321, "StarPos":[3.0,1.0,-2.0], "JumpDist":4.37}
+`
+	if err := os.WriteFile(journalFile, []byte(initialEntries), 0644); err != nil {
+		t.Fatalf("failed writing journal file: %v", err)
+	}
+
+	// 2. First run of application
+	st1, err := store.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed creating store 1: %v", err)
+	}
+	tr1 := New(st1, statusPath)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	go tr1.Start(ctx1)
+	time.Sleep(100 * time.Millisecond)
+	cancel1()
+
+	visited1, err := st1.GetVisited(10)
+	if err != nil || len(visited1) != 2 {
+		t.Fatalf("expected 2 visited systems on run 1, got %d (err: %v)", len(visited1), err)
+	}
+	st1.Close()
+
+	// 3. Second run (simulate restart of application)
+	st2, err := store.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed creating store 2: %v", err)
+	}
+	defer st2.Close()
+
+	tr2 := New(st2, statusPath)
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	go tr2.Start(ctx2)
+	time.Sleep(100 * time.Millisecond)
+
+	visited2, err := st2.GetVisited(10)
+	if err != nil || len(visited2) != 2 {
+		t.Fatalf("expected STILL 2 visited systems after restart (no duplicate backfill), got %d (err: %v)", len(visited2), err)
+	}
+
+	// 4. Append new jump during run 2
+	newJump := `{"timestamp":"2024-03-01T12:15:00Z", "event":"FSDJump", "StarSystem":"Sirius", "SystemAddress":554433, "StarPos":[1.0,2.0,3.0], "JumpDist":8.6}
+`
+	f, err := os.OpenFile(journalFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatalf("failed opening journal file for append: %v", err)
+	}
+	_, _ = f.WriteString(newJump)
+	f.Close()
+
+	time.Sleep(300 * time.Millisecond)
+	cancel2()
+
+	visited3, err := st2.GetVisited(10)
+	if err != nil || len(visited3) != 3 {
+		t.Fatalf("expected 3 visited systems after new jump, got %d (err: %v)", len(visited3), err)
+	}
+	if visited3[0].SystemName != "Sirius" {
+		t.Errorf("expected newest to be Sirius, got %s", visited3[0].SystemName)
+	}
+}
+
