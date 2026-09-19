@@ -108,8 +108,8 @@ When an update is detected, it displays a formatted summary:
 | `-interval` | `duration` | `250ms` | Polling interval when `-mode poll` is selected |
 | `-retries` | `int` | `3` | Maximum quick retries on read/parse failure |
 | `-retry-delay` | `duration` | `25ms` | Delay time between quick retries (e.g. `25ms`, `50ms`) |
+| `-track` | `bool` | `false` | Enable optional SQLite tracking of visited and targeted systems (alias: `-tracking`) |
 | `-db` | `string` | `""` | Path to SQLite database file (default: `ed_assist.db` next to binary) |
-| `-mcp` | `bool` | `false` | Enable MCP (Model Context Protocol) server on stdio |
 | `-status` | `string` | `""` | Direct override for the `Status.json` path |
 | `-config` | `string` | `""` | Path to custom `config.ini` |
 | `-loglevel` | `string` | `info` | Log level: `debug`, `info`, `warn`, `error` |
@@ -124,6 +124,9 @@ Place a `config.ini` next to the binary or in the current working directory (see
 ; Custom path to Status.json (leave empty for auto-detection)
 status_file = 
 
+; Optional system tracking (latest 100 visited systems & 100 targeted destinations in SQLite)
+enable_tracking = false
+
 ; SQLite database path for visited and targeted tracking (default: ed_assist.db next to binary)
 db_path = 
 
@@ -137,7 +140,7 @@ poll_interval_ms = 250
 max_retries = 3
 retry_time_ms = 25
 
-; Enable MCP server mode
+; Enable MCP server mode (stdio)
 enable_mcp = false
 
 ; Logging
@@ -149,23 +152,28 @@ loglevel = info
 
 ## Model Context Protocol (MCP) Server
 
-When started with `-mcp`, `ed-assist` runs an MCP server over standard I/O (`stdio`). This allows AI assistants and IDEs to inspect your real-time Elite Dangerous status.
+When configured with `enable_mcp = true` in `config.ini`, `ed-assist` runs an MCP server over standard I/O (`stdio`). This allows AI assistants and IDEs to inspect your real-time Elite Dangerous status.
 
 ### Running with MCP
+
+Set `enable_mcp = true` in `config.ini` and launch `ed-assist`:
 ```bash
-./ed-assist -mcp
+./ed-assist
+```
+Or specify a dedicated config file:
+```bash
+./ed-assist -config /path/to/mcp-config.ini
 ```
 
 ### Client Configuration Example (e.g. Claude Desktop / Cursor)
 
-Add to your MCP settings configuration:
+Add to your MCP settings configuration (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "ed-assist": {
-      "command": "/path/to/ed-assist",
-      "args": ["-mcp"]
+      "command": "/path/to/ed-assist"
     }
   }
 }

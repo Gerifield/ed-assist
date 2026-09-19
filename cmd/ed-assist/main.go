@@ -70,7 +70,8 @@ func main() {
 	modeFlag := flag.String("mode", "", "Update detection mode: watch (event-driven, default) or poll (ticker)")
 	retriesFlag := flag.Int("retries", -1, "Maximum quick retries on read failure (default: 3)")
 	retryDelayFlag := flag.Duration("retry-delay", 0, "Delay time between quick retries (default: 25ms)")
-	mcpFlag := flag.Bool("mcp", false, "Enable MCP (Model Context Protocol) server on stdio")
+	trackFlag := flag.Bool("track", false, "Enable SQLite tracking of visited and targeted systems (default: false)")
+	flag.BoolVar(trackFlag, "tracking", false, "Enable SQLite tracking of visited and targeted systems (alias)")
 	flag.Parse()
 
 	// Load configuration from config.ini (or auto-determine defaults)
@@ -81,12 +82,24 @@ func main() {
 	}
 
 	// Apply CLI overrides if provided
+	trackFlagPassed := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "track" || f.Name == "tracking" {
+			trackFlagPassed = true
+		}
+	})
+	if trackFlagPassed {
+		cfg.EnableTracking = *trackFlag
+	}
 	if *statusFileFlag != "" {
 		cfg.StatusFilePath = *statusFileFlag
 		cfg.ConfigSource = fmt.Sprintf("flag (%s)", *statusFileFlag)
 	}
 	if *dbPathFlag != "" {
 		cfg.DBPath = *dbPathFlag
+		if !trackFlagPassed {
+			cfg.EnableTracking = true
+		}
 	}
 	if *modeFlag != "" {
 		cfg.Mode = *modeFlag
@@ -106,19 +119,16 @@ func main() {
 	if *pollIntervalFlag > 0 {
 		cfg.PollInterval = *pollIntervalFlag
 	}
-	if *mcpFlag {
-		cfg.EnableMCP = true
-	}
 
 	setupLogging(cfg.LogLevel, cfg.LogFile, cfg.EnableMCP)
 
 	slog.Info("starting ed-assist",
 		"mcp_enabled", cfg.EnableMCP,
+		"tracking_enabled", cfg.EnableTracking,
 		"mode", cfg.Mode,
 		"poll_interval", cfg.PollInterval,
 		"max_retries", cfg.MaxRetries,
 		"retry_delay", cfg.RetryDelay,
-		"database", cfg.DBPath,
 	)
 	slog.Info("expected status file path", "path", cfg.StatusFilePath, "source", cfg.ConfigSource)
 
@@ -134,17 +144,26 @@ func main() {
 		cancel()
 	}()
 
-	// Initialize local SQLite database next to binary
-	sqliteStore, err := store.New(cfg.DBPath)
-	if err != nil {
-		slog.Error("failed to open sqlite database", "path", cfg.DBPath, "error", err)
-		os.Exit(1)
-	}
-	defer sqliteStore.Close()
+	var sqliteStore *store.Store
+	var sysTracker *tracker.Tracker
 
-	// Initialize journal & status tracker for visited and targeted systems
-	sysTracker := tracker.New(sqliteStore, cfg.StatusFilePath)
-	go sysTracker.Start(ctx)
+	if cfg.EnableTracking {
+		// Initialize local SQLite database next to binary
+		var err error
+		sqliteStore, err = store.New(cfg.DBPath)
+		if err != nil {
+			slog.Error("failed to open sqlite database", "path", cfg.DBPath, "error", err)
+			os.Exit(1)
+		}
+		defer sqliteStore.Close()
+
+		// Initialize journal & status tracker for visited and targeted systems
+		sysTracker = tracker.New(sqliteStore, cfg.StatusFilePath)
+		go sysTracker.Start(ctx)
+		slog.Info("system tracking enabled", "database", cfg.DBPath)
+	} else {
+		slog.Info("system tracking disabled (use -track to enable)")
+	}
 
 	// Initialize status reader (event-driven watch mode or periodic polling)
 	readerMode := reader.ModeWatch
@@ -166,12 +185,14 @@ func main() {
 		mcpSrv := mcpserver.New(statusReader, sqliteStore)
 		slog.Info("MCP server ready on stdio", "tools", 8, "resources", 4)
 
-		// Forward status updates to tracker in background
-		go func() {
-			for st := range statusReader.StatusChan() {
-				sysTracker.ProcessStatus(st)
-			}
-		}()
+		// Forward status updates to tracker in background if tracking enabled
+		if sysTracker != nil {
+			go func() {
+				for st := range statusReader.StatusChan() {
+					sysTracker.ProcessStatus(st)
+				}
+			}()
+		}
 
 		errChan := make(chan error, 1)
 		go func() {
@@ -207,7 +228,9 @@ func main() {
 			if !ok {
 				return
 			}
-			sysTracker.ProcessStatus(st)
+			if sysTracker != nil {
+				sysTracker.ProcessStatus(st)
+			}
 			displayStatus(st)
 		}
 	}

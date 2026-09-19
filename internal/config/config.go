@@ -14,6 +14,7 @@ import (
 
 // Config holds runtime configuration options for ed-assist.
 type Config struct {
+	EnableTracking bool          `json:"enable_tracking"`
 	DBPath         string        `json:"db_path"`
 	StatusFilePath string        `json:"status_file_path"`
 	ConfigSource   string        `json:"config_source"`
@@ -30,6 +31,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	defaultPath := DetermineDefaultStatusPath()
 	return &Config{
+		EnableTracking: false,
 		DBPath:         DetermineDefaultDBPath(),
 		StatusFilePath: defaultPath,
 		ConfigSource:   "auto-determined",
@@ -121,6 +123,11 @@ func Load(configFileOverride string) (*Config, error) {
 
 	if db := lookupProp(props, "db_path", "db", "database", "sqlite_path"); db != "" {
 		cfg.DBPath = expandPath(db)
+	}
+
+	if trackStr := lookupProp(props, "enable_tracking", "tracking", "track"); trackStr != "" {
+		trackLower := strings.ToLower(trackStr)
+		cfg.EnableTracking = trackLower == "true" || trackLower == "1" || trackLower == "yes" || trackLower == "on"
 	}
 
 	if m := lookupProp(props, "mode"); m != "" {

@@ -156,3 +156,31 @@ func TestMCPServerNoStatus(t *testing.T) {
 		t.Errorf("unexpected error text: %+v", firstContent)
 	}
 }
+
+func TestMCPServerTrackingDisabled(t *testing.T) {
+	st := makeSampleStatus()
+	mock := &mockProvider{status: st}
+	s := New(mock, nil)
+
+	ctx := context.Background()
+
+	for _, toolName := range []string{"get_visited_systems", "get_targeted_systems"} {
+		tool := s.server.GetTool(toolName)
+		if tool == nil {
+			t.Fatalf("tool %s not registered", toolName)
+		}
+		res, err := tool.Handler(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{Name: toolName},
+		})
+		if err != nil {
+			t.Fatalf("unexpected call error: %v", err)
+		}
+		if !res.IsError {
+			t.Errorf("expected error result when tracking is disabled for %s", toolName)
+		}
+		tc, ok := mcp.AsTextContent(res.Content[0])
+		if !ok || !strings.Contains(tc.Text, "database tracking is not enabled") {
+			t.Errorf("expected disabled message, got %v", res.Content[0])
+		}
+	}
+}

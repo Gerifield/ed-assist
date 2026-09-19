@@ -9,6 +9,9 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
+	if cfg.EnableTracking {
+		t.Errorf("expected EnableTracking to be false by default")
+	}
 	if cfg.PollInterval != 250*time.Millisecond {
 		t.Errorf("expected 250ms poll interval, got %v", cfg.PollInterval)
 	}
@@ -103,5 +106,27 @@ enable_mcp = true
 
 	if !cfg.EnableMCP {
 		t.Errorf("expected EnableMCP to be true")
+	}
+}
+
+func TestLoadTrackingConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+enable_tracking = true
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !cfg.EnableTracking {
+		t.Errorf("expected EnableTracking to be true")
 	}
 }

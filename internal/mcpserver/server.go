@@ -227,7 +227,7 @@ func (s *MCPServer) registerTools() {
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if s.store == nil {
-				return mcp.NewToolResultError("database store is not configured"), nil
+				return mcp.NewToolResultError("database tracking is not enabled (run with -track or set enable_tracking = true in config.ini)"), nil
 			}
 			limit := request.GetInt("limit", 100)
 			visited, err := s.store.GetVisited(limit)
@@ -250,7 +250,7 @@ func (s *MCPServer) registerTools() {
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if s.store == nil {
-				return mcp.NewToolResultError("database store is not configured"), nil
+				return mcp.NewToolResultError("database tracking is not enabled (run with -track or set enable_tracking = true in config.ini)"), nil
 			}
 			limit := request.GetInt("limit", 100)
 			targeted, err := s.store.GetTargeted(limit)
@@ -327,7 +327,7 @@ func (s *MCPServer) registerResources() {
 		),
 		func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 			if s.store == nil {
-				return nil, fmt.Errorf("database store not available")
+				return nil, fmt.Errorf("database tracking is not enabled (run with -track or set enable_tracking = true in config.ini)")
 			}
 			visited, err := s.store.GetVisited(100)
 			if err != nil {
@@ -357,7 +357,7 @@ func (s *MCPServer) registerResources() {
 		),
 		func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 			if s.store == nil {
-				return nil, fmt.Errorf("database store not available")
+				return nil, fmt.Errorf("database tracking is not enabled (run with -track or set enable_tracking = true in config.ini)")
 			}
 			targeted, err := s.store.GetTargeted(100)
 			if err != nil {
