@@ -22,6 +22,8 @@ type Config struct {
 	StatusFilePath string        `json:"status_file_path"`
 	ConfigSource   string        `json:"config_source"`
 	EnableMCP      bool          `json:"enable_mcp"`
+	MCPTransport   string        `json:"mcp_transport"` // "stdio" or "http"
+	MCPAddr        string        `json:"mcp_addr"`      // e.g. "127.0.0.1:8080"
 	Mode           string        `json:"mode"`
 	PollInterval   time.Duration `json:"poll_interval"`
 	MaxRetries     int           `json:"max_retries"`
@@ -42,6 +44,8 @@ func DefaultConfig() *Config {
 		StatusFilePath: defaultPath,
 		ConfigSource:   "auto-determined",
 		EnableMCP:      false,
+		MCPTransport:   "stdio",
+		MCPAddr:        "127.0.0.1:8080",
 		Mode:           "watch",                // Event-driven by default
 		PollInterval:   250 * time.Millisecond, // 1/4 second when polling
 		MaxRetries:     3,
@@ -160,6 +164,25 @@ func Load(configFileOverride string) (*Config, error) {
 	if mcpStr := lookupProp(props, "enable_mcp", "mcp"); mcpStr != "" {
 		mcpLower := strings.ToLower(mcpStr)
 		cfg.EnableMCP = mcpLower == "true" || mcpLower == "1" || mcpLower == "yes" || mcpLower == "on"
+	}
+
+	if transportStr := lookupProp(props, "mcp_transport", "mcp_mode", "mcp_type", "transport"); transportStr != "" {
+		tLower := strings.ToLower(transportStr)
+		if tLower == "http" || tLower == "sse" || tLower == "web" {
+			cfg.MCPTransport = "http"
+		} else if tLower == "stdio" || tLower == "stdin" {
+			cfg.MCPTransport = "stdio"
+		}
+	}
+
+	if addrStr := lookupProp(props, "mcp_addr", "mcp_address", "mcp_port", "mcp_http_addr", "mcp_listen"); addrStr != "" {
+		if _, err := strconv.Atoi(addrStr); err == nil {
+			cfg.MCPAddr = "127.0.0.1:" + addrStr
+		} else if strings.HasPrefix(addrStr, ":") {
+			cfg.MCPAddr = "127.0.0.1" + addrStr
+		} else {
+			cfg.MCPAddr = addrStr
+		}
 	}
 
 	if intervalStr := lookupProp(props, "poll_interval_ms", "poll_interval"); intervalStr != "" {

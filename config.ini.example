@@ -25,8 +25,18 @@ loglevel = info
 ; logfile = ed-assist.log
 
 ; Model Context Protocol (MCP) server support
-; Set to true to start as an MCP server over stdio for LLM integration (Claude Desktop, Cursor, etc.)
+; Set to true to start the MCP server for LLM integration (Claude Desktop, Cursor, etc.)
 enable_mcp = false
+
+; MCP transport protocol: "stdio" or "http" (default: "stdio")
+; stdio = standard I/O (for local command-based MCP clients like Claude Desktop)
+; http  = HTTP Server-Sent Events (SSE). In http mode, terminal displays live event logs
+;         while serving MCP concurrently at http://<mcp_addr>/sse
+mcp_transport = stdio
+
+; HTTP listen address / port for MCP when mcp_transport = http (default: 127.0.0.1:8080)
+; Accepts "127.0.0.1:8080", ":8080", or simply port number "8080"
+mcp_addr = 127.0.0.1:8080
 
 ; Optional system tracking (latest 100 visited systems & 100 targeted destinations in SQLite)
 ; Set to true or launch with -track to enable

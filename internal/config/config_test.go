@@ -97,6 +97,8 @@ func TestLoadMCPConfig(t *testing.T) {
 	content := `
 [general]
 enable_mcp = true
+mcp_transport = http
+mcp_addr = 8088
 `
 	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write test ini file: %v", err)
@@ -109,6 +111,12 @@ enable_mcp = true
 
 	if !cfg.EnableMCP {
 		t.Errorf("expected EnableMCP to be true")
+	}
+	if cfg.MCPTransport != "http" {
+		t.Errorf("expected MCPTransport to be http, got %s", cfg.MCPTransport)
+	}
+	if cfg.MCPAddr != "127.0.0.1:8088" {
+		t.Errorf("expected MCPAddr 127.0.0.1:8088, got %s", cfg.MCPAddr)
 	}
 }
 

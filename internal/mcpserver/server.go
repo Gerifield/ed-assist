@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"time"
 
 	"ed-assist/internal/input"
 	"ed-assist/internal/parser"
@@ -454,6 +456,62 @@ func (s *MCPServer) ServeStdio(ctx context.Context, in io.Reader, out io.Writer)
 	slog.Info("starting MCP server on stdio")
 	stdioServer := server.NewStdioServer(s.server)
 	return stdioServer.Listen(ctx, in, out)
+}
+
+// ServeHTTP starts the MCP server over HTTP (SSE transport) on the specified listen address.
+func (s *MCPServer) ServeHTTP(ctx context.Context, addr string) error {
+	slog.Info("starting MCP server over HTTP/SSE",
+		"addr", addr,
+		"sse_endpoint", fmt.Sprintf("http://%s/sse", addr),
+		"message_endpoint", fmt.Sprintf("http://%s/message", addr),
+	)
+
+	sseServer := server.NewSSEServer(
+		s.server,
+		server.WithSSECORS(server.WithCORSAllowedOrigins("*")),
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":             "ed-assist",
+				"version":          "1.0.0",
+				"status":           "running",
+				"transport":        "sse",
+				"sse_endpoint":     "/sse",
+				"message_endpoint": "/message",
+				"tools":            10,
+				"resources":        5,
+			})
+			return
+		}
+		sseServer.ServeHTTP(w, r)
+	})
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = sseServer.Shutdown(shutdownCtx)
+		return srv.Shutdown(shutdownCtx)
+	case err := <-errChan:
+		return err
+	}
 }
 
 // Server returns the underlying MCPServer.

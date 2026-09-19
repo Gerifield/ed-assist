@@ -140,8 +140,15 @@ poll_interval_ms = 250
 max_retries = 3
 retry_time_ms = 25
 
-; Enable MCP server mode (stdio)
+; Enable MCP server mode
 enable_mcp = false
+
+; MCP transport: "stdio" or "http" (default: "stdio")
+; In "http" mode, live terminal events and logs remain active while serving MCP over HTTP/SSE
+mcp_transport = stdio
+
+; HTTP listen address when mcp_transport = http (default: 127.0.0.1:8080)
+mcp_addr = 127.0.0.1:8080
 
 ; Optional in-game control via DirectInput hardware scancodes and active .binds file
 ; Enables MCP tools send_game_command and list_game_commands
@@ -162,7 +169,20 @@ loglevel = info
 
 ## Model Context Protocol (MCP) Server
 
-When configured with `enable_mcp = true` in `config.ini`, `ed-assist` runs an MCP server over standard I/O (`stdio`). This allows AI assistants and IDEs to inspect your real-time Elite Dangerous status and optionally control in-game systems.
+When configured with `enable_mcp = true` in `config.ini`, `ed-assist` runs an MCP server exposing real-time Elite Dangerous status, system history, and in-game controls to AI assistants.
+
+### Transport Modes
+
+`ed-assist` supports two MCP transport protocols selectable via `mcp_transport` in `config.ini`:
+
+1. **`http` (Recommended for interactive play)**:
+   - Starts an HTTP server supporting **Server-Sent Events (SSE)** at `http://127.0.0.1:8080/sse`.
+   - **Full Terminal Event Logging**: The running terminal continues to print live formatted game status updates and event logs as you fly.
+   - MCP clients (Cursor, web dashboards, remote agents) connect over HTTP.
+
+2. **`stdio` (Default)**:
+   - Operates over standard input and output streams (`stdin`/`stdout`).
+   - Suitable when spawned directly as a subprocess by local desktop applications (like Claude Desktop).
 
 ### Running with MCP
 
@@ -175,10 +195,20 @@ Or specify a dedicated config file:
 ./ed-assist -config /path/to/mcp-config.ini
 ```
 
-### Client Configuration Example (e.g. Claude Desktop / Cursor)
+### Client Configuration Examples
 
-Add to your MCP settings configuration (`claude_desktop_config.json`):
+#### HTTP / SSE Transport (Cursor / remote MCP clients)
+```json
+{
+  "mcpServers": {
+    "ed-assist": {
+      "url": "http://127.0.0.1:8080/sse"
+    }
+  }
+}
+```
 
+#### Stdio Transport (Claude Desktop local command)
 ```json
 {
   "mcpServers": {

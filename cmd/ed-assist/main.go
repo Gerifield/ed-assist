@@ -121,10 +121,12 @@ func main() {
 		cfg.PollInterval = *pollIntervalFlag
 	}
 
-	setupLogging(cfg.LogLevel, cfg.LogFile, cfg.EnableMCP)
+	setupLogging(cfg.LogLevel, cfg.LogFile, cfg.EnableMCP && cfg.MCPTransport == "stdio")
 
 	slog.Info("starting ed-assist",
 		"mcp_enabled", cfg.EnableMCP,
+		"mcp_transport", cfg.MCPTransport,
+		"mcp_addr", cfg.MCPAddr,
 		"tracking_enabled", cfg.EnableTracking,
 		"game_control", cfg.GameControl,
 		"key_hold_ms", cfg.KeyHoldMs,
@@ -196,39 +198,56 @@ func main() {
 
 	go statusReader.Start(ctx)
 
-	// If MCP mode is enabled, run the MCP server over stdio
+	// If MCP mode is enabled, run the MCP server
 	if cfg.EnableMCP {
 		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController)
-		slog.Info("MCP server ready on stdio", "tools", 10, "resources", 5)
 
-		// Forward status updates to tracker in background if tracking enabled
-		if sysTracker != nil {
+		if cfg.MCPTransport == "http" {
+			// In HTTP mode, run MCP server in background and fall through to terminal event display
 			go func() {
-				for st := range statusReader.StatusChan() {
-					sysTracker.ProcessStatus(st)
+				if err := mcpSrv.ServeHTTP(ctx, cfg.MCPAddr); err != nil && ctx.Err() == nil {
+					slog.Error("MCP HTTP server stopped", "error", err)
+					cancel()
 				}
 			}()
-		}
+			slog.Info("MCP server ready over HTTP/SSE",
+				"sse_endpoint", fmt.Sprintf("http://%s/sse", cfg.MCPAddr),
+				"tools", 10,
+				"resources", 5,
+			)
+		} else {
+			// In stdio mode, stdio is reserved for JSON-RPC communication
+			slog.Info("MCP server ready on stdio", "tools", 10, "resources", 5)
 
-		errChan := make(chan error, 1)
-		go func() {
-			errChan <- mcpSrv.ServeStdio(ctx, os.Stdin, os.Stdout)
-		}()
-
-		select {
-		case <-ctx.Done():
-			slog.Info("MCP server shutting down")
-		case err := <-errChan:
-			if err != nil && err != io.EOF && ctx.Err() == nil {
-				slog.Error("MCP server exited", "error", err)
+			// Forward status updates to tracker in background if tracking enabled
+			if sysTracker != nil {
+				go func() {
+					for st := range statusReader.StatusChan() {
+						sysTracker.ProcessStatus(st)
+					}
+				}()
 			}
-			cancel()
-		}
 
-		statusReader.Stop()
-		statusReader.Wait()
-		slog.Info("ed-assist stopped cleanly")
-		return
+			errChan := make(chan error, 1)
+			go func() {
+				errChan <- mcpSrv.ServeStdio(ctx, os.Stdin, os.Stdout)
+			}()
+
+			select {
+			case <-ctx.Done():
+				slog.Info("MCP server shutting down")
+			case err := <-errChan:
+				if err != nil && err != io.EOF && ctx.Err() == nil {
+					slog.Error("MCP server exited", "error", err)
+				}
+				cancel()
+			}
+
+			statusReader.Stop()
+			statusReader.Wait()
+			slog.Info("ed-assist stopped cleanly")
+			return
+		}
 	}
 
 	// Normal terminal display mode: display parsed status updates and track destinations

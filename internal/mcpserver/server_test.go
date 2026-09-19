@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"net"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -248,5 +250,50 @@ func TestMCPServerGameControlDisabled(t *testing.T) {
 		if !ok || !strings.Contains(tc.Text, "game control is not enabled") {
 			t.Errorf("expected disabled message, got %v", res.Content[0])
 		}
+	}
+}
+
+func TestMCPServerServeHTTP(t *testing.T) {
+	st := makeSampleStatus()
+	mock := &mockProvider{status: st}
+	s := New(mock, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Get a free random local port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen on local port: %v", err)
+	}
+	addr := listener.Addr().String()
+	_ = listener.Close()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- s.ServeHTTP(ctx, addr)
+	}()
+
+	// Wait briefly for server to start listening
+	time.Sleep(50 * time.Millisecond)
+
+	resp, err := http.Get("http://" + addr + "/")
+	if err != nil {
+		t.Fatalf("failed HTTP GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	cancel()
+	select {
+	case err := <-errChan:
+		if err != nil && err != http.ErrServerClosed {
+			t.Fatalf("unexpected server error on shutdown: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server shutdown timed out")
 	}
 }
