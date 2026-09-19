@@ -11,13 +11,14 @@ import (
 	"syscall"
 
 	"ed-assist/internal/config"
+	"ed-assist/internal/mcpserver"
 	"ed-assist/internal/parser"
 	"ed-assist/internal/reader"
 )
 
 var globalLogLevel *slog.LevelVar
 
-func setupLogging(level, logfile string) {
+func setupLogging(level, logfile string, mcpMode bool) {
 	globalLogLevel = &slog.LevelVar{}
 	opts := &slog.HandlerOptions{
 		Level: globalLogLevel,
@@ -36,13 +37,18 @@ func setupLogging(level, logfile string) {
 		globalLogLevel.Set(slog.LevelInfo)
 	}
 
+	// In MCP mode, stdout is reserved for JSON-RPC messages, so logs must go to stderr
 	var w io.Writer = os.Stdout
+	if mcpMode {
+		w = os.Stderr
+	}
+
 	if logfile != "" {
 		f, err := os.OpenFile(logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to open logfile: %v\n", err)
 		} else {
-			w = io.MultiWriter(os.Stdout, f)
+			w = io.MultiWriter(w, f)
 		}
 	}
 
@@ -61,6 +67,7 @@ func main() {
 	modeFlag := flag.String("mode", "", "Update detection mode: watch (event-driven, default) or poll (ticker)")
 	retriesFlag := flag.Int("retries", -1, "Maximum quick retries on read failure (default: 3)")
 	retryDelayFlag := flag.Duration("retry-delay", 0, "Delay time between quick retries (default: 25ms)")
+	mcpFlag := flag.Bool("mcp", false, "Enable MCP (Model Context Protocol) server on stdio")
 	flag.Parse()
 
 	// Load configuration from config.ini (or auto-determine defaults)
@@ -93,10 +100,14 @@ func main() {
 	if *pollIntervalFlag > 0 {
 		cfg.PollInterval = *pollIntervalFlag
 	}
+	if *mcpFlag {
+		cfg.EnableMCP = true
+	}
 
-	setupLogging(cfg.LogLevel, cfg.LogFile)
+	setupLogging(cfg.LogLevel, cfg.LogFile, cfg.EnableMCP)
 
 	slog.Info("starting ed-assist",
+		"mcp_enabled", cfg.EnableMCP,
 		"mode", cfg.Mode,
 		"poll_interval", cfg.PollInterval,
 		"max_retries", cfg.MaxRetries,
@@ -132,7 +143,33 @@ func main() {
 
 	go statusReader.Start(ctx)
 
-	// Display parsed status updates as they occur
+	// If MCP mode is enabled, run the MCP server over stdio
+	if cfg.EnableMCP {
+		mcpSrv := mcpserver.New(statusReader)
+		slog.Info("MCP server ready on stdio", "tools", 6, "resources", 2)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- mcpSrv.ServeStdio(ctx, os.Stdin, os.Stdout)
+		}()
+
+		select {
+		case <-ctx.Done():
+			slog.Info("MCP server shutting down")
+		case err := <-errChan:
+			if err != nil && err != io.EOF && ctx.Err() == nil {
+				slog.Error("MCP server exited", "error", err)
+			}
+			cancel()
+		}
+
+		statusReader.Stop()
+		statusReader.Wait()
+		slog.Info("ed-assist stopped cleanly")
+		return
+	}
+
+	// Normal terminal display mode: display parsed status updates as they occur
 	for {
 		select {
 		case <-ctx.Done():

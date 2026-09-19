@@ -16,6 +16,7 @@ import (
 type Config struct {
 	StatusFilePath string        `json:"status_file_path"`
 	ConfigSource   string        `json:"config_source"`
+	EnableMCP      bool          `json:"enable_mcp"`
 	Mode           string        `json:"mode"`
 	PollInterval   time.Duration `json:"poll_interval"`
 	MaxRetries     int           `json:"max_retries"`
@@ -30,6 +31,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		StatusFilePath: defaultPath,
 		ConfigSource:   "auto-determined",
+		EnableMCP:      false,
 		Mode:           "watch",                // Event-driven by default
 		PollInterval:   250 * time.Millisecond, // 1/4 second when polling
 		MaxRetries:     3,
@@ -108,6 +110,11 @@ func Load(configFileOverride string) (*Config, error) {
 
 	if m := lookupProp(props, "mode"); m != "" {
 		cfg.Mode = strings.ToLower(m)
+	}
+
+	if mcpStr := lookupProp(props, "enable_mcp", "mcp"); mcpStr != "" {
+		mcpLower := strings.ToLower(mcpStr)
+		cfg.EnableMCP = mcpLower == "true" || mcpLower == "1" || mcpLower == "yes" || mcpLower == "on"
 	}
 
 	if intervalStr := lookupProp(props, "poll_interval_ms", "poll_interval"); intervalStr != "" {

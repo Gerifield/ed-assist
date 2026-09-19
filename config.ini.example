@@ -23,3 +23,8 @@ retry_time_ms = 25
 ; Logging configuration (debug, info, warn, error)
 loglevel = info
 ; logfile = ed-assist.log
+
+; Model Context Protocol (MCP) server support
+; Set to true to start as an MCP server over stdio for LLM integration (Claude Desktop, Cursor, etc.)
+enable_mcp = false
+

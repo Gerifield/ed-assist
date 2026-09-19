@@ -83,3 +83,25 @@ retry_time_ms = 45
 		t.Errorf("expected retry delay 45ms, got %v", cfg.RetryDelay)
 	}
 }
+
+func TestLoadMCPConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+enable_mcp = true
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !cfg.EnableMCP {
+		t.Errorf("expected EnableMCP to be true")
+	}
+}
