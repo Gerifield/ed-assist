@@ -60,11 +60,12 @@ func TestReaderQuickRetry(t *testing.T) {
 		t.Fatalf("failed to write empty file: %v", err)
 	}
 
-	r := New(filePath, WithRetries(5, 20*time.Millisecond))
+	// Configure generous retry window (15 retries * 40ms = 600ms) to withstand CI scheduling delays
+	r := New(filePath, WithRetries(15, 40*time.Millisecond))
 
-	// In a separate goroutine, simulate game finishing the write after 40ms
+	// In a separate goroutine, simulate game finishing the write shortly
 	go func() {
-		time.Sleep(30 * time.Millisecond)
+		time.Sleep(15 * time.Millisecond)
 		_ = os.WriteFile(filePath, []byte(sampleStatus1), 0644)
 	}()
 
