@@ -21,13 +21,66 @@ A lightweight, cross-platform Go helper for **Elite Dangerous** that monitors, r
   - Automatically records the **latest 100 targeted systems/destinations** from cockpit nav targets.
   - Persisted locally in an **SQLite database (`ed_assist.db`)** located next to the binary with automatic pruning.
 - **Model Context Protocol (MCP) Server**:
-  - Exposes all Elite Dangerous game status via standard MCP (JSON-RPC 2.0 on stdio).
-  - Works with AI assistants and IDEs (Claude Desktop, Cursor, Antigravity, etc.).
-  - Exposes dedicated tools for full status, ship/SRV flags, navigation, cockpit systems, and Odyssey on-foot states, plus MCP resources.
+  - Exposes all Elite Dangerous game status via standard MCP.
+  - Supports dual transport modes: **`stdio`** (for Claude Desktop local commands) and **`http` (Server-Sent Events / SSE)** with concurrent live terminal event logging.
+  - Works out-of-the-box with AI assistants and IDEs (Cursor, Claude Desktop, Antigravity, custom agents).
+  - Exposes 10 tools and 5 resources covering telemetry, navigation, on-foot metrics, travel history, and ship controls.
+- **In-Game Ship & Cockpit Control**:
+  - Automatically parses player's active `.binds` XML file to resolve key mappings and modifiers.
+  - Sends DirectInput hardware scancodes via Windows `SendInput` with configurable hold duration (`key_hold_ms`).
+  - Allows AI copilots to toggle landing gear, hardpoints, lights, night vision, boost, FSD, targeting, and power distribution (pips).
 - **Flexible Configuration**:
   - Configurable via `config.ini` located next to the binary or in the working directory.
   - Automatically determines the default Elite Dangerous path on Windows and Linux if unconfigured.
-  - Full CLI flag overrides.
+  - Full CLI flag overrides for quick adjustments.
+
+---
+
+## Why ed-assist? (Comparison with Existing Tools)
+
+The Elite Dangerous community has built incredible software over the years. However, most established tools were conceived before modern AI protocols existed and often come with heavy runtime dependencies, complex graphical interfaces, or proprietary plugin systems.
+
+`ed-assist` was designed from the ground up around a distinct philosophy: **minimalist, modular, AI-native, and self-contained**.
+
+### At a Glance: Tool Comparison
+
+| Feature | **ed-assist** | **EDMC** | **EDDI** | **VoiceAttack + HCS** | **EDDiscovery** |
+|---|---|---|---|---|---|
+| **Architecture** | **Single standalone Go binary** | Python + Tkinter GUI | Large .NET / C# application | Closed-source Windows app ($) | Heavy .NET desktop app |
+| **Runtime Dependencies** | **None** (pure Go, CGO-free) | Python runtime + pip packages | .NET Framework / Desktop Runtime | Windows SAPI / macro engine | .NET Runtime + database engines |
+| **Memory Footprint** | **~10–20 MB RAM** | ~60–120 MB RAM | ~150–350 MB RAM | ~80–150 MB RAM | ~300 MB–1+ GB RAM |
+| **Idle CPU Usage** | **0% CPU** (OS filesystem events) | Polling / timer loops | Event hooks + speech synthesis loops | Audio listening loop | Polling + database sync |
+| **AI Integration** | **Native MCP Server** (`stdio` & `http`/SSE) | None (REST / bespoke plugins only) | Speech responders only | Macro script triggers | None |
+| **Two-Way Control** | **Yes** (DirectInput scancodes from `.binds`) | No (telemetry / upload only) | No (voice responses only) | Yes (pre-recorded macros) | No (read-only telemetry) |
+| **System Tracking** | **Lightweight local SQLite** (latest 100) | Cloud relay (EDDN/Inara) | Internal SQLite / DB | None | Massive multi-GB local history DB |
+| **Cross-Platform** | **Windows & Linux** (native & Proton) | Windows, Linux, macOS | Windows-centric | Windows only | Windows (Linux experimental) |
+
+### Key Differentiators
+
+1. **AI-Native via Open MCP Standard**
+   - Implements the official [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
+   - Connects directly to modern LLMs (Claude Desktop, Cursor, local Ollama/vLLM agents) without proprietary scripting languages or bespoke middleware.
+   - Dual transport support: runs headless over `stdio` or as a background HTTP/SSE service (`mcp_transport = http`) so your terminal continues to display live formatted game event logs in real time.
+
+2. **Modular & Composable**
+   - Follows the Unix philosophy: do one thing exceptionally well.
+   - Built as an interoperable building block that can be combined with other MCP servers (web search, notes, market calculators, custom voice agents) or custom frontends.
+
+3. **True Two-Way Ship Interaction**
+   - Most community tools only *read* game data. `ed-assist` bridges telemetry with execution:
+   - Reads and auto-detects the player's active `.binds` XML file.
+   - Translates high-level actions (`landing_gear`, `hardpoints`, `pips_sys`, `fsd`, `target`, etc.) into hardware DirectInput scancodes with microsecond-level hold timing (`key_hold_ms`).
+
+4. **Zero-Dependency Single Binary**
+   - Built in pure Go with an embedded pure-Go SQLite driver (`modernc.org/sqlite`).
+   - No CGO, no Python environments, no .NET runtimes, no DLL hell. Download a single executable (`ed-assist` or `ed-assist.exe`), drop in a `config.ini`, and start flying.
+
+5. **Future-Ready Roadmap**
+   - Designed to grow incrementally with planned modular additions:
+     - Automated route planning & neutron highway navigation tools.
+     - Real-time commodity trading & market opportunity alerts.
+     - Local Text-To-Speech (TTS) audio copilot output.
+     - Web-based telemetry dashboard / HUD overlay.
 
 ---
 
