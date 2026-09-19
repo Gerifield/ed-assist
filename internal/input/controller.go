@@ -19,21 +19,42 @@ type ExecutionResult struct {
 
 // Controller coordinates binds discovery, key lookup, and scancode execution.
 type Controller struct {
-	mu           sync.RWMutex
-	bindingsPath string
-	registry     *BindsRegistry
-	sender       KeySender
+	mu            sync.RWMutex
+	bindingsPath  string
+	defaultHoldMs int
+	registry      *BindsRegistry
+	sender        KeySender
 }
 
 // NewController creates a new GameController.
-func NewController(bindingsPath string, sender KeySender) *Controller {
+func NewController(bindingsPath string, defaultHoldMs int, sender KeySender) *Controller {
 	if sender == nil {
 		sender = NewKeySender()
 	}
+	if defaultHoldMs <= 0 {
+		defaultHoldMs = 80
+	}
 	return &Controller{
-		bindingsPath: bindingsPath,
-		registry:     NewBindsRegistry(),
-		sender:       sender,
+		bindingsPath:  bindingsPath,
+		defaultHoldMs: defaultHoldMs,
+		registry:      NewBindsRegistry(),
+		sender:        sender,
+	}
+}
+
+// DefaultHoldMs returns the configured default key hold duration in ms.
+func (c *Controller) DefaultHoldMs() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.defaultHoldMs
+}
+
+// SetDefaultHoldMs sets the default hold duration in ms.
+func (c *Controller) SetDefaultHoldMs(ms int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ms > 0 {
+		c.defaultHoldMs = ms
 	}
 }
 
@@ -82,7 +103,12 @@ func (c *Controller) ExecuteAction(action string, holdMs int) (*ExecutionResult,
 	}
 
 	if holdMs <= 0 {
-		holdMs = 80 // Default to 80ms
+		c.mu.RLock()
+		holdMs = c.defaultHoldMs
+		c.mu.RUnlock()
+	}
+	if holdMs <= 0 {
+		holdMs = 80 // Fallback safety
 	}
 	holdDuration := time.Duration(holdMs) * time.Millisecond
 

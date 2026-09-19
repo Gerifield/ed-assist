@@ -12,6 +12,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.EnableTracking {
 		t.Errorf("expected EnableTracking to be false by default")
 	}
+	if cfg.KeyHoldMs != 80 {
+		t.Errorf("expected default KeyHoldMs 80, got %d", cfg.KeyHoldMs)
+	}
 	if cfg.PollInterval != 250*time.Millisecond {
 		t.Errorf("expected 250ms poll interval, got %v", cfg.PollInterval)
 	}
@@ -138,6 +141,7 @@ func TestLoadGameControlConfig(t *testing.T) {
 	content := `
 [general]
 game_control = true
+key_hold_ms = 120
 bindings_path = /tmp/custom/bindings
 `
 	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
@@ -151,6 +155,9 @@ bindings_path = /tmp/custom/bindings
 
 	if !cfg.GameControl {
 		t.Errorf("expected GameControl to be true")
+	}
+	if cfg.KeyHoldMs != 120 {
+		t.Errorf("expected KeyHoldMs 120, got %d", cfg.KeyHoldMs)
 	}
 	if cfg.BindingsPath != filepath.Clean("/tmp/custom/bindings") {
 		t.Errorf("expected /tmp/custom/bindings, got %s", cfg.BindingsPath)

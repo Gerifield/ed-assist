@@ -147,6 +147,9 @@ enable_mcp = false
 ; Enables MCP tools send_game_command and list_game_commands
 game_control = false
 
+; Key press hold duration in ms (default: 80ms)
+key_hold_ms = 80
+
 ; Custom path to Elite Dangerous Bindings folder or .binds file (optional)
 bindings_path = 
 

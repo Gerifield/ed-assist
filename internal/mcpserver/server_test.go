@@ -93,7 +93,7 @@ func TestMCPServerTools(t *testing.T) {
 		TargetedAt:    time.Now().UTC(),
 	})
 
-	ctrl := input.NewController("", &mockKeySender{})
+	ctrl := input.NewController("", 80, &mockKeySender{})
 	reg := input.NewBindsRegistry()
 	_ = reg.ParseReader(strings.NewReader(`<?xml version="1.0" encoding="UTF-8" ?>
 <Root PresetName="Custom">

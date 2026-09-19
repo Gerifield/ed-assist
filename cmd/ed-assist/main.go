@@ -127,6 +127,7 @@ func main() {
 		"mcp_enabled", cfg.EnableMCP,
 		"tracking_enabled", cfg.EnableTracking,
 		"game_control", cfg.GameControl,
+		"key_hold_ms", cfg.KeyHoldMs,
 		"mode", cfg.Mode,
 		"poll_interval", cfg.PollInterval,
 		"max_retries", cfg.MaxRetries,
@@ -170,11 +171,11 @@ func main() {
 	// Initialize game control if enabled in config.ini
 	var gameController *input.Controller
 	if cfg.GameControl {
-		gameController = input.NewController(cfg.BindingsPath, nil)
+		gameController = input.NewController(cfg.BindingsPath, cfg.KeyHoldMs, nil)
 		if err := gameController.Load(); err != nil {
 			slog.Warn("game control enabled but failed loading binds", "error", err)
 		} else {
-			slog.Info("game control active", "actions", len(gameController.ListActions()))
+			slog.Info("game control active", "actions", len(gameController.ListActions()), "key_hold_ms", cfg.KeyHoldMs)
 		}
 	} else {
 		slog.Info("game control disabled (enable with game_control = true in config.ini)")

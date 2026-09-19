@@ -16,6 +16,7 @@ import (
 type Config struct {
 	EnableTracking bool          `json:"enable_tracking"`
 	GameControl    bool          `json:"game_control"`
+	KeyHoldMs      int           `json:"key_hold_ms"`
 	BindingsPath   string        `json:"bindings_path"`
 	DBPath         string        `json:"db_path"`
 	StatusFilePath string        `json:"status_file_path"`
@@ -35,6 +36,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		EnableTracking: false,
 		GameControl:    false,
+		KeyHoldMs:      80,
 		BindingsPath:   "",
 		DBPath:         DetermineDefaultDBPath(),
 		StatusFilePath: defaultPath,
@@ -137,6 +139,14 @@ func Load(configFileOverride string) (*Config, error) {
 	if gcStr := lookupProp(props, "game_control", "control", "enable_game_control", "enable_control"); gcStr != "" {
 		gcLower := strings.ToLower(gcStr)
 		cfg.GameControl = gcLower == "true" || gcLower == "1" || gcLower == "yes" || gcLower == "on"
+	}
+
+	if holdStr := lookupProp(props, "key_hold_ms", "hold_ms", "control_hold_ms", "key_hold"); holdStr != "" {
+		if ms, err := strconv.Atoi(holdStr); err == nil && ms > 0 {
+			cfg.KeyHoldMs = ms
+		} else if d, err := time.ParseDuration(holdStr); err == nil && d > 0 {
+			cfg.KeyHoldMs = int(d / time.Millisecond)
+		}
 	}
 
 	if bp := lookupProp(props, "bindings_path", "binds_path", "binds_file", "bindings_file"); bp != "" {

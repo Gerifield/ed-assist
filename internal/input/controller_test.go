@@ -21,7 +21,7 @@ func (m *mockKeySender) SendKey(scanCode ScanCode, holdDuration time.Duration, m
 
 func TestControllerExecuteAction(t *testing.T) {
 	mockSender := &mockKeySender{}
-	ctrl := NewController("", mockSender)
+	ctrl := NewController("", 120, mockSender)
 
 	reg := NewBindsRegistry()
 	if err := reg.ParseReader(strings.NewReader(sampleBindsXML)); err != nil {
@@ -29,7 +29,7 @@ func TestControllerExecuteAction(t *testing.T) {
 	}
 	ctrl.registry = reg
 
-	// 1. Test executing by alias "landing_gear"
+	// 1. Test executing by alias "landing_gear" with explicit holdMs (100ms)
 	res, err := ctrl.ExecuteAction("landing_gear", 100)
 	if err != nil {
 		t.Fatalf("unexpected execution error: %v", err)
@@ -44,7 +44,7 @@ func TestControllerExecuteAction(t *testing.T) {
 		t.Errorf("expected 100ms duration, got %v", mockSender.durations[0])
 	}
 
-	// 2. Test executing action with modifiers "hardpoints"
+	// 2. Test executing action with modifiers "hardpoints" with 0 (should use default 120ms)
 	resMod, err := ctrl.ExecuteAction("hardpoints", 0)
 	if err != nil {
 		t.Fatalf("unexpected modifier action error: %v", err)
@@ -55,8 +55,11 @@ func TestControllerExecuteAction(t *testing.T) {
 	if len(mockSender.sentModifiers[1]) != 1 || mockSender.sentModifiers[1][0].Code != 0x1D {
 		t.Errorf("expected modifier 0x1D, got %v", mockSender.sentModifiers[1])
 	}
-	if resMod.HoldMs != 80 {
-		t.Errorf("expected default 80ms, got %d", resMod.HoldMs)
+	if resMod.HoldMs != 120 {
+		t.Errorf("expected default 120ms, got %d", resMod.HoldMs)
+	}
+	if mockSender.durations[1] != 120*time.Millisecond {
+		t.Errorf("expected 120ms duration sent, got %v", mockSender.durations[1])
 	}
 
 	// 3. Test non-existent action

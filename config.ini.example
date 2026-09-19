@@ -40,6 +40,9 @@ db_path =
 ; Enables MCP tools: send_game_command and list_game_commands
 game_control = false
 
+; Key press hold duration in milliseconds (default: 80ms, minimum recommended: 50-100ms)
+key_hold_ms = 80
+
 ; Custom path to Elite Dangerous Bindings folder or .binds file
 ; If empty, auto-detects from %LOCALAPPDATA%\Frontier Developments\Elite Dangerous\Options\Bindings
 bindings_path =

@@ -273,7 +273,7 @@ func (s *MCPServer) registerTools() {
 		mcp.NewTool("send_game_command",
 			mcp.WithDescription("Send a discrete in-game flight or cockpit command to Elite Dangerous via DirectInput hardware scancodes (e.g. landing_gear, hardpoints, cargo_scoop, lights, night_vision, boost, fsd, target, next_target, pips_sys, pips_eng, pips_wep, pips_reset, or any raw action from .binds)"),
 			mcp.WithString("action", mcp.Required(), mcp.Description("Action name or friendly alias to execute (e.g. 'landing_gear', 'hardpoints', 'cargo_scoop', 'lights', 'night_vision', 'boost', 'fsd', 'target', 'pips_sys', 'pips_eng', 'pips_wep', 'pips_reset')")),
-			mcp.WithNumber("hold_ms", mcp.Description("Key hold duration in milliseconds (default: 80ms)")),
+			mcp.WithNumber("hold_ms", mcp.Description("Key hold duration in milliseconds (optional, defaults to key_hold_ms from config.ini, default: 80ms)")),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if s.controller == nil {
@@ -283,7 +283,7 @@ func (s *MCPServer) registerTools() {
 			if action == "" {
 				return mcp.NewToolResultError("action parameter is required"), nil
 			}
-			holdMs := request.GetInt("hold_ms", 80)
+			holdMs := request.GetInt("hold_ms", 0)
 			res, err := s.controller.ExecuteAction(action, holdMs)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("command failed: %v", err)), nil
