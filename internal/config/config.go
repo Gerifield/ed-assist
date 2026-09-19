@@ -14,6 +14,7 @@ import (
 
 // Config holds runtime configuration options for ed-assist.
 type Config struct {
+	DBPath         string        `json:"db_path"`
 	StatusFilePath string        `json:"status_file_path"`
 	ConfigSource   string        `json:"config_source"`
 	EnableMCP      bool          `json:"enable_mcp"`
@@ -29,6 +30,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	defaultPath := DetermineDefaultStatusPath()
 	return &Config{
+		DBPath:         DetermineDefaultDBPath(),
 		StatusFilePath: defaultPath,
 		ConfigSource:   "auto-determined",
 		EnableMCP:      false,
@@ -38,6 +40,15 @@ func DefaultConfig() *Config {
 		RetryDelay:     25 * time.Millisecond,
 		LogLevel:       "info",
 	}
+}
+
+// DetermineDefaultDBPath returns the path to ed_assist.db next to the binary.
+func DetermineDefaultDBPath() string {
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		return filepath.Join(exeDir, "ed_assist.db")
+	}
+	return "ed_assist.db"
 }
 
 // DetermineDefaultStatusPath returns the standard Elite Dangerous Status.json path.
@@ -106,6 +117,10 @@ func Load(configFileOverride string) (*Config, error) {
 		}
 		cfg.StatusFilePath = statusFile
 		cfg.ConfigSource = fmt.Sprintf("config.ini (%s)", iniPath)
+	}
+
+	if db := lookupProp(props, "db_path", "db", "database", "sqlite_path"); db != "" {
+		cfg.DBPath = expandPath(db)
 	}
 
 	if m := lookupProp(props, "mode"); m != "" {

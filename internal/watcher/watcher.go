@@ -22,6 +22,7 @@ type Event struct {
 type Watcher struct {
 	fs     *fsnotify.Watcher
 	target string
+	isDir  bool
 	Events chan Event
 	done   chan struct{}
 }
@@ -43,7 +44,9 @@ func New(target string) (*Watcher, error) {
 	// If target is a file that might not exist yet, watch its parent directory
 	watchPath := target
 	if info, err := os.Stat(target); err == nil {
-		if !info.IsDir() {
+		if info.IsDir() {
+			w.isDir = true
+		} else {
 			watchPath = filepath.Dir(target)
 		}
 	} else {
@@ -80,8 +83,8 @@ func (w *Watcher) Watch() {
 					baseName := filepath.Base(event.Name)
 					targetBase := filepath.Base(w.target)
 
-					// On Windows, file systems are case-insensitive
-					if targetBase != "" && targetBase != "." && !strings.EqualFold(targetBase, baseName) {
+					// If watching a specific file (not a directory), only emit for that file
+					if !w.isDir && targetBase != "" && targetBase != "." && !strings.EqualFold(targetBase, baseName) {
 						continue
 					}
 

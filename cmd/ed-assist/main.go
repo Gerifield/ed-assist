@@ -14,6 +14,8 @@ import (
 	"ed-assist/internal/mcpserver"
 	"ed-assist/internal/parser"
 	"ed-assist/internal/reader"
+	"ed-assist/internal/store"
+	"ed-assist/internal/tracker"
 )
 
 var globalLogLevel *slog.LevelVar
@@ -61,6 +63,7 @@ func main() {
 	// Parse CLI flags
 	configFileFlag := flag.String("config", "", "Path to config.ini file")
 	statusFileFlag := flag.String("status", "", "Override path to Status.json")
+	dbPathFlag := flag.String("db", "", "Path to SQLite database file (default: ed_assist.db next to binary)")
 	logLevelFlag := flag.String("loglevel", "", "Set log level (debug, info, warn, error)")
 	logFileFlag := flag.String("logfile", "", "Log to specified file")
 	pollIntervalFlag := flag.Duration("interval", 0, "Polling interval for poll mode (default: 250ms)")
@@ -81,6 +84,9 @@ func main() {
 	if *statusFileFlag != "" {
 		cfg.StatusFilePath = *statusFileFlag
 		cfg.ConfigSource = fmt.Sprintf("flag (%s)", *statusFileFlag)
+	}
+	if *dbPathFlag != "" {
+		cfg.DBPath = *dbPathFlag
 	}
 	if *modeFlag != "" {
 		cfg.Mode = *modeFlag
@@ -112,8 +118,8 @@ func main() {
 		"poll_interval", cfg.PollInterval,
 		"max_retries", cfg.MaxRetries,
 		"retry_delay", cfg.RetryDelay,
+		"database", cfg.DBPath,
 	)
-	// Log expected path as required
 	slog.Info("expected status file path", "path", cfg.StatusFilePath, "source", cfg.ConfigSource)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -127,6 +133,18 @@ func main() {
 		slog.Info("shutdown signal received", "signal", sig.String())
 		cancel()
 	}()
+
+	// Initialize local SQLite database next to binary
+	sqliteStore, err := store.New(cfg.DBPath)
+	if err != nil {
+		slog.Error("failed to open sqlite database", "path", cfg.DBPath, "error", err)
+		os.Exit(1)
+	}
+	defer sqliteStore.Close()
+
+	// Initialize journal & status tracker for visited and targeted systems
+	sysTracker := tracker.New(sqliteStore, cfg.StatusFilePath)
+	go sysTracker.Start(ctx)
 
 	// Initialize status reader (event-driven watch mode or periodic polling)
 	readerMode := reader.ModeWatch
@@ -145,8 +163,15 @@ func main() {
 
 	// If MCP mode is enabled, run the MCP server over stdio
 	if cfg.EnableMCP {
-		mcpSrv := mcpserver.New(statusReader)
-		slog.Info("MCP server ready on stdio", "tools", 6, "resources", 2)
+		mcpSrv := mcpserver.New(statusReader, sqliteStore)
+		slog.Info("MCP server ready on stdio", "tools", 8, "resources", 4)
+
+		// Forward status updates to tracker in background
+		go func() {
+			for st := range statusReader.StatusChan() {
+				sysTracker.ProcessStatus(st)
+			}
+		}()
 
 		errChan := make(chan error, 1)
 		go func() {
@@ -169,7 +194,7 @@ func main() {
 		return
 	}
 
-	// Normal terminal display mode: display parsed status updates as they occur
+	// Normal terminal display mode: display parsed status updates and track destinations
 	for {
 		select {
 		case <-ctx.Done():
@@ -182,6 +207,7 @@ func main() {
 			if !ok {
 				return
 			}
+			sysTracker.ProcessStatus(st)
 			displayStatus(st)
 		}
 	}

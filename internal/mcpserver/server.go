@@ -9,6 +9,7 @@ import (
 
 	"ed-assist/internal/parser"
 	"ed-assist/internal/reader"
+	"ed-assist/internal/store"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -24,10 +25,11 @@ type StatusProvider interface {
 type MCPServer struct {
 	server   *server.MCPServer
 	provider StatusProvider
+	store    *store.Store
 }
 
 // New creates and configures an MCP server exposing Elite Dangerous game status.
-func New(provider StatusProvider) *MCPServer {
+func New(provider StatusProvider, st *store.Store) *MCPServer {
 	s := &MCPServer{
 		server: server.NewMCPServer(
 			"ed-assist",
@@ -37,6 +39,7 @@ func New(provider StatusProvider) *MCPServer {
 			server.WithDescription("Elite Dangerous Status Assistant - exposes live ship, navigation, cockpit, and on-foot game data"),
 		),
 		provider: provider,
+		store:    st,
 	}
 
 	s.registerTools()
@@ -215,6 +218,52 @@ func (s *MCPServer) registerTools() {
 			return mcp.NewToolResultText(string(bytes)), nil
 		},
 	)
+
+	// Tool 7: get_visited_systems (History of visited star systems from SQLite)
+	s.server.AddTool(
+		mcp.NewTool("get_visited_systems",
+			mcp.WithDescription("Get the history of visited star systems (latest up to 100 entries, stored in SQLite database)"),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of visited systems to return (1-100, default 100)")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if s.store == nil {
+				return mcp.NewToolResultError("database store is not configured"), nil
+			}
+			limit := request.GetInt("limit", 100)
+			visited, err := s.store.GetVisited(limit)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed retrieving visited systems: %v", err)), nil
+			}
+			jsonStr, err := store.FormatVisitedJSON(visited)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return mcp.NewToolResultText(jsonStr), nil
+		},
+	)
+
+	// Tool 8: get_targeted_systems (History of targeted star systems from SQLite)
+	s.server.AddTool(
+		mcp.NewTool("get_targeted_systems",
+			mcp.WithDescription("Get the history of targeted destinations and star systems (latest up to 100 entries, stored in SQLite database)"),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of targeted systems to return (1-100, default 100)")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if s.store == nil {
+				return mcp.NewToolResultError("database store is not configured"), nil
+			}
+			limit := request.GetInt("limit", 100)
+			targeted, err := s.store.GetTargeted(limit)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed retrieving targeted systems: %v", err)), nil
+			}
+			jsonStr, err := store.FormatTargetedJSON(targeted)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return mcp.NewToolResultText(jsonStr), nil
+		},
+	)
 }
 
 func (s *MCPServer) registerResources() {
@@ -263,6 +312,66 @@ func (s *MCPServer) registerResources() {
 					URI:      "ed://status/summary",
 					MIMEType: "text/plain",
 					Text:     st.Summary(),
+				},
+			}, nil
+		},
+	)
+
+	// Resource 3: ed://systems/visited
+	s.server.AddResource(
+		mcp.NewResource(
+			"ed://systems/visited",
+			"Visited Star Systems",
+			mcp.WithResourceDescription("Latest 100 visited star systems stored in local SQLite database"),
+			mcp.WithMIMEType("application/json"),
+		),
+		func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			if s.store == nil {
+				return nil, fmt.Errorf("database store not available")
+			}
+			visited, err := s.store.GetVisited(100)
+			if err != nil {
+				return nil, err
+			}
+			jsonStr, err := store.FormatVisitedJSON(visited)
+			if err != nil {
+				return nil, err
+			}
+			return []mcp.ResourceContents{
+				mcp.TextResourceContents{
+					URI:      "ed://systems/visited",
+					MIMEType: "application/json",
+					Text:     jsonStr,
+				},
+			}, nil
+		},
+	)
+
+	// Resource 4: ed://systems/targeted
+	s.server.AddResource(
+		mcp.NewResource(
+			"ed://systems/targeted",
+			"Targeted Systems",
+			mcp.WithResourceDescription("Latest 100 targeted systems/destinations stored in local SQLite database"),
+			mcp.WithMIMEType("application/json"),
+		),
+		func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			if s.store == nil {
+				return nil, fmt.Errorf("database store not available")
+			}
+			targeted, err := s.store.GetTargeted(100)
+			if err != nil {
+				return nil, err
+			}
+			jsonStr, err := store.FormatTargetedJSON(targeted)
+			if err != nil {
+				return nil, err
+			}
+			return []mcp.ResourceContents{
+				mcp.TextResourceContents{
+					URI:      "ed://systems/targeted",
+					MIMEType: "application/json",
+					Text:     jsonStr,
 				},
 			}, nil
 		},

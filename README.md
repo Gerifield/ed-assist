@@ -16,6 +16,10 @@ A lightweight, cross-platform Go helper for **Elite Dangerous** that monitors, r
   - **Odyssey On-Foot Status**: Unpacks `Flags2` (On-Foot, In Taxi, In Multicrew, Oxygen, Health, Temperature, Gravity, Selected Weapon).
   - **Cockpit Systems**: Power distribution (`Pips`: SYS, ENG, WEP in half-pips), `Fuel` (Main and Reservoir in tons), `Cargo` mass, and `GuiFocus` menus.
   - **Navigation & Planetary**: Latitude, Longitude, Altitude, Heading, Body Name, Balance, and Destination target.
+- **System & Destination Tracking (SQLite)**:
+  - Automatically records the **latest 100 visited star systems** (with coordinates, economy, allegiance, population, jump distance from journal logs).
+  - Automatically records the **latest 100 targeted systems/destinations** from cockpit nav targets.
+  - Persisted locally in an **SQLite database (`ed_assist.db`)** located next to the binary with automatic pruning.
 - **Model Context Protocol (MCP) Server**:
   - Exposes all Elite Dangerous game status via standard MCP (JSON-RPC 2.0 on stdio).
   - Works with AI assistants and IDEs (Claude Desktop, Cursor, Antigravity, etc.).
@@ -104,6 +108,7 @@ When an update is detected, it displays a formatted summary:
 | `-interval` | `duration` | `250ms` | Polling interval when `-mode poll` is selected |
 | `-retries` | `int` | `3` | Maximum quick retries on read/parse failure |
 | `-retry-delay` | `duration` | `25ms` | Delay time between quick retries (e.g. `25ms`, `50ms`) |
+| `-db` | `string` | `""` | Path to SQLite database file (default: `ed_assist.db` next to binary) |
 | `-mcp` | `bool` | `false` | Enable MCP (Model Context Protocol) server on stdio |
 | `-status` | `string` | `""` | Direct override for the `Status.json` path |
 | `-config` | `string` | `""` | Path to custom `config.ini` |
@@ -118,6 +123,9 @@ Place a `config.ini` next to the binary or in the current working directory (see
 [general]
 ; Custom path to Status.json (leave empty for auto-detection)
 status_file = 
+
+; SQLite database path for visited and targeted tracking (default: ed_assist.db next to binary)
+db_path = 
 
 ; Detection mode: "watch" (event-driven) or "poll" (periodic)
 mode = watch
@@ -173,6 +181,8 @@ Add to your MCP settings configuration:
 | `get_cockpit` | Returns power pips (SYS, ENG, WEP), fuel (Main and Reservoir in tons), cargo mass, and GUI focus screen. |
 | `get_navigation` | Returns body name, latitude, longitude, altitude, heading, planet radius, and targeted destination. |
 | `get_on_foot` | Returns Odyssey on-foot metrics: health, oxygen, temperature, gravity, weapon, and on-foot flags. |
+| `get_visited_systems` | Returns the latest visited star systems history (up to 100) from the SQLite database. |
+| `get_targeted_systems` | Returns the latest targeted star systems/destinations history (up to 100) from the SQLite database. |
 
 ### Exposed MCP Resources
 
@@ -180,6 +190,8 @@ Add to your MCP settings configuration:
 |---|---|---|
 | `ed://status/current` | `application/json` | Raw JSON of latest status snapshot. |
 | `ed://status/summary` | `text/plain` | Clean text summary of current status. |
+| `ed://systems/visited` | `application/json` | JSON list of up to 100 latest visited star systems. |
+| `ed://systems/targeted` | `application/json` | JSON list of up to 100 latest targeted destinations. |
 
 ---
 
@@ -205,6 +217,12 @@ ed-assist/
 │   ├── reader/
 │   │   ├── reader.go            # Status reader (watch/poll) with quick retry logic
 │   │   └── reader_test.go
+│   ├── store/
+│   │   ├── store.go             # SQLite store for visited and targeted systems
+│   │   └── store_test.go
+│   ├── tracker/
+│   │   ├── tracker.go           # Journal & Status.json event tracking for systems
+│   │   └── tracker_test.go
 │   └── watcher/
 │       ├── watcher.go           # Cross-platform fsnotify watcher
 │       └── watcher_test.go

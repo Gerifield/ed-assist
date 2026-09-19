@@ -28,3 +28,8 @@ loglevel = info
 ; Set to true to start as an MCP server over stdio for LLM integration (Claude Desktop, Cursor, etc.)
 enable_mcp = false
 
+; SQLite database path for visited and targeted system tracking
+; If empty or omitted, defaults to ed_assist.db located next to the binary
+db_path = 
+
+
