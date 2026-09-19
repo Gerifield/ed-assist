@@ -36,4 +36,10 @@ enable_tracking = false
 ; If empty or omitted, defaults to ed_assist.db located next to the binary
 db_path = 
 
+; Optional in-game control via DirectInput hardware scancodes and active .binds file
+; Enables MCP tools: send_game_command and list_game_commands
+game_control = false
 
+; Custom path to Elite Dangerous Bindings folder or .binds file
+; If empty, auto-detects from %LOCALAPPDATA%\Frontier Developments\Elite Dangerous\Options\Bindings
+bindings_path =

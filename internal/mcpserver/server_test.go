@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"ed-assist/internal/input"
 	"ed-assist/internal/parser"
 	"ed-assist/internal/store"
 
@@ -28,6 +29,12 @@ func (m *mockProvider) ReadOnce() (*parser.Status, error) {
 		return nil, m.err
 	}
 	return m.status, nil
+}
+
+type mockKeySender struct{}
+
+func (m *mockKeySender) SendKey(scanCode input.ScanCode, holdDuration time.Duration, modifiers ...input.ScanCode) error {
+	return nil
 }
 
 func makeSampleStatus() *parser.Status {
@@ -86,9 +93,19 @@ func TestMCPServerTools(t *testing.T) {
 		TargetedAt:    time.Now().UTC(),
 	})
 
+	ctrl := input.NewController("", &mockKeySender{})
+	reg := input.NewBindsRegistry()
+	_ = reg.ParseReader(strings.NewReader(`<?xml version="1.0" encoding="UTF-8" ?>
+<Root PresetName="Custom">
+	<LandingGearToggle>
+		<Primary Device="Keyboard" Key="Key_L" />
+	</LandingGearToggle>
+</Root>`))
+	ctrl.SetRegistry(reg)
+
 	st := makeSampleStatus()
 	mock := &mockProvider{status: st}
-	s := New(mock, dbStore)
+	s := New(mock, dbStore, ctrl)
 
 	ctx := context.Background()
 
@@ -101,6 +118,7 @@ func TestMCPServerTools(t *testing.T) {
 		"get_on_foot",
 		"get_visited_systems",
 		"get_targeted_systems",
+		"list_game_commands",
 	}
 
 	for _, name := range toolNames {
@@ -127,11 +145,31 @@ func TestMCPServerTools(t *testing.T) {
 			t.Fatalf("tool %s returned empty content", name)
 		}
 	}
+
+	// Test send_game_command tool
+	sendTool := s.server.GetTool("send_game_command")
+	if sendTool == nil {
+		t.Fatalf("send_game_command tool not registered")
+	}
+	sendRes, err := sendTool.Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "send_game_command",
+			Arguments: map[string]interface{}{
+				"action": "landing_gear",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected send_game_command error: %v", err)
+	}
+	if sendRes.IsError {
+		t.Fatalf("expected send_game_command success, got error: %+v", sendRes)
+	}
 }
 
 func TestMCPServerNoStatus(t *testing.T) {
 	mock := &mockProvider{status: nil, err: errors.New("file not found")}
-	s := New(mock, nil)
+	s := New(mock, nil, nil)
 
 	ctx := context.Background()
 	st := s.server.GetTool("get_status")
@@ -160,7 +198,7 @@ func TestMCPServerNoStatus(t *testing.T) {
 func TestMCPServerTrackingDisabled(t *testing.T) {
 	st := makeSampleStatus()
 	mock := &mockProvider{status: st}
-	s := New(mock, nil)
+	s := New(mock, nil, nil)
 
 	ctx := context.Background()
 
@@ -180,6 +218,34 @@ func TestMCPServerTrackingDisabled(t *testing.T) {
 		}
 		tc, ok := mcp.AsTextContent(res.Content[0])
 		if !ok || !strings.Contains(tc.Text, "database tracking is not enabled") {
+			t.Errorf("expected disabled message, got %v", res.Content[0])
+		}
+	}
+}
+
+func TestMCPServerGameControlDisabled(t *testing.T) {
+	st := makeSampleStatus()
+	mock := &mockProvider{status: st}
+	s := New(mock, nil, nil)
+
+	ctx := context.Background()
+
+	for _, toolName := range []string{"send_game_command", "list_game_commands"} {
+		tool := s.server.GetTool(toolName)
+		if tool == nil {
+			t.Fatalf("tool %s not registered", toolName)
+		}
+		res, err := tool.Handler(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{Name: toolName},
+		})
+		if err != nil {
+			t.Fatalf("unexpected call error: %v", err)
+		}
+		if !res.IsError {
+			t.Errorf("expected error result when control is disabled for %s", toolName)
+		}
+		tc, ok := mcp.AsTextContent(res.Content[0])
+		if !ok || !strings.Contains(tc.Text, "game control is not enabled") {
 			t.Errorf("expected disabled message, got %v", res.Content[0])
 		}
 	}

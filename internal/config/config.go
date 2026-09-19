@@ -15,6 +15,8 @@ import (
 // Config holds runtime configuration options for ed-assist.
 type Config struct {
 	EnableTracking bool          `json:"enable_tracking"`
+	GameControl    bool          `json:"game_control"`
+	BindingsPath   string        `json:"bindings_path"`
 	DBPath         string        `json:"db_path"`
 	StatusFilePath string        `json:"status_file_path"`
 	ConfigSource   string        `json:"config_source"`
@@ -32,6 +34,8 @@ func DefaultConfig() *Config {
 	defaultPath := DetermineDefaultStatusPath()
 	return &Config{
 		EnableTracking: false,
+		GameControl:    false,
+		BindingsPath:   "",
 		DBPath:         DetermineDefaultDBPath(),
 		StatusFilePath: defaultPath,
 		ConfigSource:   "auto-determined",
@@ -128,6 +132,15 @@ func Load(configFileOverride string) (*Config, error) {
 	if trackStr := lookupProp(props, "enable_tracking", "tracking", "track"); trackStr != "" {
 		trackLower := strings.ToLower(trackStr)
 		cfg.EnableTracking = trackLower == "true" || trackLower == "1" || trackLower == "yes" || trackLower == "on"
+	}
+
+	if gcStr := lookupProp(props, "game_control", "control", "enable_game_control", "enable_control"); gcStr != "" {
+		gcLower := strings.ToLower(gcStr)
+		cfg.GameControl = gcLower == "true" || gcLower == "1" || gcLower == "yes" || gcLower == "on"
+	}
+
+	if bp := lookupProp(props, "bindings_path", "binds_path", "binds_file", "bindings_file"); bp != "" {
+		cfg.BindingsPath = expandPath(bp)
 	}
 
 	if m := lookupProp(props, "mode"); m != "" {

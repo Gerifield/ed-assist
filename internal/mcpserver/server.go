@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 
+	"ed-assist/internal/input"
 	"ed-assist/internal/parser"
 	"ed-assist/internal/reader"
 	"ed-assist/internal/store"
@@ -15,7 +16,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// StatusProvider is an interface for obtaining the current Elite Dangerous status.
+// StatusProvider defines an interface for fetching Elite Dangerous status data.
 type StatusProvider interface {
 	LastStatus() *parser.Status
 	ReadOnce() (*parser.Status, error)
@@ -23,23 +24,25 @@ type StatusProvider interface {
 
 // MCPServer wraps the mark3labs MCP server for Elite Dangerous.
 type MCPServer struct {
-	server   *server.MCPServer
-	provider StatusProvider
-	store    *store.Store
+	server     *server.MCPServer
+	provider   StatusProvider
+	store      *store.Store
+	controller *input.Controller
 }
 
-// New creates and configures an MCP server exposing Elite Dangerous game status.
-func New(provider StatusProvider, st *store.Store) *MCPServer {
+// New creates and configures an MCP server exposing Elite Dangerous game status and controls.
+func New(provider StatusProvider, st *store.Store, ctrl *input.Controller) *MCPServer {
 	s := &MCPServer{
 		server: server.NewMCPServer(
 			"ed-assist",
 			"1.0.0",
 			server.WithToolCapabilities(false),
 			server.WithResourceCapabilities(false, false),
-			server.WithDescription("Elite Dangerous Status Assistant - exposes live ship, navigation, cockpit, and on-foot game data"),
+			server.WithDescription("Elite Dangerous Status Assistant - exposes live ship data and optional in-game control"),
 		),
-		provider: provider,
-		store:    st,
+		provider:   provider,
+		store:      st,
+		controller: ctrl,
 	}
 
 	s.registerTools()
@@ -264,6 +267,48 @@ func (s *MCPServer) registerTools() {
 			return mcp.NewToolResultText(jsonStr), nil
 		},
 	)
+
+	// Tool 9: send_game_command (Execute in-game command via DirectInput scancode)
+	s.server.AddTool(
+		mcp.NewTool("send_game_command",
+			mcp.WithDescription("Send a discrete in-game flight or cockpit command to Elite Dangerous via DirectInput hardware scancodes (e.g. landing_gear, hardpoints, cargo_scoop, lights, night_vision, boost, fsd, target, next_target, pips_sys, pips_eng, pips_wep, pips_reset, or any raw action from .binds)"),
+			mcp.WithString("action", mcp.Required(), mcp.Description("Action name or friendly alias to execute (e.g. 'landing_gear', 'hardpoints', 'cargo_scoop', 'lights', 'night_vision', 'boost', 'fsd', 'target', 'pips_sys', 'pips_eng', 'pips_wep', 'pips_reset')")),
+			mcp.WithNumber("hold_ms", mcp.Description("Key hold duration in milliseconds (default: 80ms)")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if s.controller == nil {
+				return mcp.NewToolResultError("game control is not enabled (set game_control = true under [general] in config.ini)"), nil
+			}
+			action := request.GetString("action", "")
+			if action == "" {
+				return mcp.NewToolResultError("action parameter is required"), nil
+			}
+			holdMs := request.GetInt("hold_ms", 80)
+			res, err := s.controller.ExecuteAction(action, holdMs)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("command failed: %v", err)), nil
+			}
+			bytes, _ := json.MarshalIndent(res, "", "  ")
+			return mcp.NewToolResultText(fmt.Sprintf("Action %q executed successfully:\n%s", res.ActionName, string(bytes))), nil
+		},
+	)
+
+	// Tool 10: list_game_commands (List available bound actions)
+	s.server.AddTool(
+		mcp.NewTool("list_game_commands",
+			mcp.WithDescription("List all available in-game actions and key bindings mapped from the player's active Elite Dangerous .binds file"),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if s.controller == nil {
+				return mcp.NewToolResultError("game control is not enabled (set game_control = true under [general] in config.ini)"), nil
+			}
+			jsonStr, err := s.controller.FormatActionsJSON()
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return mcp.NewToolResultText(jsonStr), nil
+		},
+	)
 }
 
 func (s *MCPServer) registerResources() {
@@ -370,6 +415,32 @@ func (s *MCPServer) registerResources() {
 			return []mcp.ResourceContents{
 				mcp.TextResourceContents{
 					URI:      "ed://systems/targeted",
+					MIMEType: "application/json",
+					Text:     jsonStr,
+				},
+			}, nil
+		},
+	)
+
+	// Resource 5: ed://controls/commands
+	s.server.AddResource(
+		mcp.NewResource(
+			"ed://controls/commands",
+			"Configured Game Commands",
+			mcp.WithResourceDescription("List of all active keyboard commands and shortcuts mapped from player's .binds file"),
+			mcp.WithMIMEType("application/json"),
+		),
+		func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			if s.controller == nil {
+				return nil, fmt.Errorf("game control is not enabled (set game_control = true in config.ini)")
+			}
+			jsonStr, err := s.controller.FormatActionsJSON()
+			if err != nil {
+				return nil, err
+			}
+			return []mcp.ResourceContents{
+				mcp.TextResourceContents{
+					URI:      "ed://controls/commands",
 					MIMEType: "application/json",
 					Text:     jsonStr,
 				},

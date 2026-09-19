@@ -130,3 +130,29 @@ enable_tracking = true
 		t.Errorf("expected EnableTracking to be true")
 	}
 }
+
+func TestLoadGameControlConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+game_control = true
+bindings_path = /tmp/custom/bindings
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !cfg.GameControl {
+		t.Errorf("expected GameControl to be true")
+	}
+	if cfg.BindingsPath != filepath.Clean("/tmp/custom/bindings") {
+		t.Errorf("expected /tmp/custom/bindings, got %s", cfg.BindingsPath)
+	}
+}

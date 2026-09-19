@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"ed-assist/internal/config"
+	"ed-assist/internal/input"
 	"ed-assist/internal/mcpserver"
 	"ed-assist/internal/parser"
 	"ed-assist/internal/reader"
@@ -125,6 +126,7 @@ func main() {
 	slog.Info("starting ed-assist",
 		"mcp_enabled", cfg.EnableMCP,
 		"tracking_enabled", cfg.EnableTracking,
+		"game_control", cfg.GameControl,
 		"mode", cfg.Mode,
 		"poll_interval", cfg.PollInterval,
 		"max_retries", cfg.MaxRetries,
@@ -165,6 +167,19 @@ func main() {
 		slog.Info("system tracking disabled (use -track to enable)")
 	}
 
+	// Initialize game control if enabled in config.ini
+	var gameController *input.Controller
+	if cfg.GameControl {
+		gameController = input.NewController(cfg.BindingsPath, nil)
+		if err := gameController.Load(); err != nil {
+			slog.Warn("game control enabled but failed loading binds", "error", err)
+		} else {
+			slog.Info("game control active", "actions", len(gameController.ListActions()))
+		}
+	} else {
+		slog.Info("game control disabled (enable with game_control = true in config.ini)")
+	}
+
 	// Initialize status reader (event-driven watch mode or periodic polling)
 	readerMode := reader.ModeWatch
 	if cfg.Mode == string(reader.ModePoll) {
@@ -182,8 +197,8 @@ func main() {
 
 	// If MCP mode is enabled, run the MCP server over stdio
 	if cfg.EnableMCP {
-		mcpSrv := mcpserver.New(statusReader, sqliteStore)
-		slog.Info("MCP server ready on stdio", "tools", 8, "resources", 4)
+		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController)
+		slog.Info("MCP server ready on stdio", "tools", 10, "resources", 5)
 
 		// Forward status updates to tracker in background if tracking enabled
 		if sysTracker != nil {

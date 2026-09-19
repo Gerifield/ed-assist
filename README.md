@@ -143,6 +143,13 @@ retry_time_ms = 25
 ; Enable MCP server mode (stdio)
 enable_mcp = false
 
+; Optional in-game control via DirectInput hardware scancodes and active .binds file
+; Enables MCP tools send_game_command and list_game_commands
+game_control = false
+
+; Custom path to Elite Dangerous Bindings folder or .binds file (optional)
+bindings_path = 
+
 ; Logging
 loglevel = info
 ; logfile = ed-assist.log
@@ -152,7 +159,7 @@ loglevel = info
 
 ## Model Context Protocol (MCP) Server
 
-When configured with `enable_mcp = true` in `config.ini`, `ed-assist` runs an MCP server over standard I/O (`stdio`). This allows AI assistants and IDEs to inspect your real-time Elite Dangerous status.
+When configured with `enable_mcp = true` in `config.ini`, `ed-assist` runs an MCP server over standard I/O (`stdio`). This allows AI assistants and IDEs to inspect your real-time Elite Dangerous status and optionally control in-game systems.
 
 ### Running with MCP
 
@@ -191,6 +198,8 @@ Add to your MCP settings configuration (`claude_desktop_config.json`):
 | `get_on_foot` | Returns Odyssey on-foot metrics: health, oxygen, temperature, gravity, weapon, and on-foot flags. |
 | `get_visited_systems` | Returns the latest visited star systems history (up to 100) from the SQLite database. |
 | `get_targeted_systems` | Returns the latest targeted star systems/destinations history (up to 100) from the SQLite database. |
+| `send_game_command` | Sends a discrete flight or cockpit command via DirectInput hardware scancodes (`landing_gear`, `hardpoints`, `cargo_scoop`, `lights`, `night_vision`, `boost`, `fsd`, `target`, `pips_sys`, `pips_eng`, `pips_wep`, `pips_reset`, etc.). |
+| `list_game_commands` | Lists all available in-game actions and key bindings mapped from the player's active `.binds` file. |
 
 ### Exposed MCP Resources
 
@@ -200,6 +209,7 @@ Add to your MCP settings configuration (`claude_desktop_config.json`):
 | `ed://status/summary` | `text/plain` | Clean text summary of current status. |
 | `ed://systems/visited` | `application/json` | JSON list of up to 100 latest visited star systems. |
 | `ed://systems/targeted` | `application/json` | JSON list of up to 100 latest targeted destinations. |
+| `ed://controls/commands` | `application/json` | JSON list of all configured keyboard commands and aliases loaded from `.binds`. |
 
 ---
 
@@ -216,6 +226,15 @@ ed-assist/
 │   │   └── config_test.go
 │   ├── flags/
 │   │   └── flags.go             # Bitmask constants for Flags, Flags2, and GuiFocus
+│   ├── input/
+│   │   ├── binds.go             # Elite Dangerous .binds XML parser and preset detector
+│   │   ├── binds_test.go
+│   │   ├── controller.go        # Controller mapping actions to scancodes
+│   │   ├── controller_test.go
+│   │   ├── scancodes.go         # DirectInput hardware scancode table
+│   │   ├── sender.go            # KeySender interface
+│   │   ├── sender_windows.go    # Windows SendInput/keybd_event implementation
+│   │   └── sender_other.go      # Non-Windows stub
 │   ├── mcpserver/
 │   │   ├── server.go            # MCP server implementation, tools, and resources
 │   │   └── server_test.go
