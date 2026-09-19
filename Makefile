@@ -1,7 +1,8 @@
 BINARY_NAME=ed-assist
 CMD_PATH=./cmd/ed-assist
 OUTPUT_DIR=bin
-LDFLAGS=-s -w
+VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS=-s -w -X main.Version=$(VERSION)
 
 .PHONY: all build windows windows-amd64 windows-arm64 linux test clean help
 

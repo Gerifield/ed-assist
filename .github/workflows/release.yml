@@ -1,0 +1,97 @@
+name: Release Builder
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Publish Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip
+
+      - name: Run unit tests
+        run: go test -v -count=1 ./...
+
+      - name: Build multi-platform binaries & packages
+        run: |
+          TAG="${GITHUB_REF_NAME:-v0.0.0}"
+          DIST_DIR="dist"
+          BUILD_DIR="build_stage"
+          mkdir -p "${DIST_DIR}" "${BUILD_DIR}"
+
+          # Target platforms: OS/ARCH/EXTENSION
+          PLATFORMS=(
+            "windows/amd64/.exe"
+            "windows/arm64/.exe"
+            "linux/amd64/"
+            "linux/arm64/"
+            "darwin/amd64/"
+            "darwin/arm64/"
+          )
+
+          for TARGET in "${PLATFORMS[@]}"; do
+            IFS="/" read -r OS ARCH EXT <<< "${TARGET}"
+            STAGE_NAME="ed-assist-${TAG}-${OS}-${ARCH}"
+            STAGE_PATH="${BUILD_DIR}/${STAGE_NAME}"
+            BIN_NAME="ed-assist${EXT}"
+            
+            echo "==> Building ${OS}/${ARCH}..."
+            mkdir -p "${STAGE_PATH}"
+            
+            CGO_ENABLED=0 GOOS="${OS}" GOARCH="${ARCH}" go build \
+              -ldflags="-s -w -X main.Version=${TAG}" \
+              -o "${STAGE_PATH}/${BIN_NAME}" \
+              ./cmd/ed-assist
+
+            # Include documentation and configuration template
+            cp config.ini.example "${STAGE_PATH}/"
+            cp README.md "${STAGE_PATH}/"
+
+            if [ "${OS}" = "windows" ]; then
+              # Create Windows .zip archive
+              (cd "${BUILD_DIR}" && zip -q -r "../${DIST_DIR}/${STAGE_NAME}.zip" "${STAGE_NAME}")
+              # Also provide direct standalone .exe for quick download
+              cp "${STAGE_PATH}/${BIN_NAME}" "${DIST_DIR}/ed-assist-${TAG}-${OS}-${ARCH}.exe"
+            else
+              # Create Linux/macOS .tar.gz archive
+              (cd "${BUILD_DIR}" && tar -czf "../${DIST_DIR}/${STAGE_NAME}.tar.gz" "${STAGE_NAME}")
+            fi
+          done
+
+          # Generate SHA256 checksums
+          echo "==> Generating SHA256 checksums..."
+          (cd "${DIST_DIR}" && sha256sum * > checksums.txt)
+
+          echo "==> Release assets generated:"
+          ls -lh "${DIST_DIR}"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,4 +1,4 @@
-ed-assist
+/ed-assist
 *.exe
 *.log
 bin/
@@ -6,3 +6,5 @@ bin/
 *.db-journal
 *.db-wal
 *.db-shm
+dist/
+build_stage/

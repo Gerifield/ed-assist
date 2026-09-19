@@ -60,6 +60,8 @@ func setupLogging(level, logfile string, mcpMode bool) {
 	slog.SetDefault(logger)
 }
 
+var Version = "dev"
+
 func main() {
 	// Parse CLI flags
 	configFileFlag := flag.String("config", "", "Path to config.ini file")
@@ -73,7 +75,13 @@ func main() {
 	retryDelayFlag := flag.Duration("retry-delay", 0, "Delay time between quick retries (default: 25ms)")
 	trackFlag := flag.Bool("track", false, "Enable SQLite tracking of visited and targeted systems (default: false)")
 	flag.BoolVar(trackFlag, "tracking", false, "Enable SQLite tracking of visited and targeted systems (alias)")
+	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("ed-assist %s\n", Version)
+		return
+	}
 
 	// Load configuration from config.ini (or auto-determine defaults)
 	cfg, err := config.Load(*configFileFlag)
