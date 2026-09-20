@@ -28,7 +28,7 @@ func main() {
 	mcpModeFlag := flag.String("mcp-mode", "", "MCP transport mode: http, stdio, or inprocess (default: inprocess/http)")
 	mcpEndpointFlag := flag.String("mcp-endpoint", "", "MCP HTTP endpoint (e.g. http://127.0.0.1:8080/sse) or path to binary for stdio")
 	apiKeyFlag := flag.String("api-key", "", "Gemini API key (or GEMINI_API_KEY env)")
-	modelFlag := flag.String("model", "", "Gemini model (default: gemini-3.8-flash-lite)")
+	modelFlag := flag.String("model", "", "Gemini model (default: gemini-flash-lite-latest)")
 	statusFileFlag := flag.String("status", "", "Override path to Status.json")
 	dbPathFlag := flag.String("db", "", "Path to SQLite database file")
 	logLevelFlag := flag.String("loglevel", "info", "Log level (debug, info, warn, error)")

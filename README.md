@@ -301,7 +301,7 @@ Or specify a dedicated config file:
 
 ## Web Cockpit Assistant (COVAS)
 
-`ed-assist-web` is a standalone web application providing an in-cockpit AI voice & text copilot powered by Google Gemini (default: `gemini-3.8-flash-lite`) and integrated with the MCP server tools.
+`ed-assist-web` is a standalone web application providing an in-cockpit AI voice & text copilot powered by Google Gemini (default: `gemini-flash-lite-latest`) and integrated with the MCP server tools.
 
 ### Features
 - **Minimal, responsive dark HUD**: Built with pure HTML5 and vanilla JavaScript (zero frontend dependencies or node build steps).

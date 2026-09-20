@@ -12,6 +12,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.EnableTracking {
 		t.Errorf("expected EnableTracking to be false by default")
 	}
+	if cfg.GeminiModel != "gemini-flash-lite-latest" {
+		t.Errorf("expected default GeminiModel gemini-flash-lite-latest, got %s", cfg.GeminiModel)
+	}
 	if cfg.KeyHoldMs != 80 {
 		t.Errorf("expected default KeyHoldMs 80, got %d", cfg.KeyHoldMs)
 	}

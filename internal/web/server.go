@@ -36,7 +36,7 @@ func NewServer(addr string, geminiClient *gemini.Client, bridge *MCPBridge, mode
 		addr = "127.0.0.1:3000"
 	}
 	if modelName == "" {
-		modelName = "gemini-3.8-flash-lite"
+		modelName = "gemini-flash-lite-latest"
 	}
 	if gateThreshold <= 0 {
 		gateThreshold = 40

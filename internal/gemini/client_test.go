@@ -70,7 +70,7 @@ func TestGeminiExecuteTurnWithToolCalling(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rounds++
 		if rounds == 1 {
-			// Round 1: Model asks to call get_ship_status
+			// Round 1: Model asks to call get_ship_status with thought_signature
 			resp := GenerateContentResponse{
 				Candidates: []struct {
 					Content struct {
@@ -87,9 +87,11 @@ func TestGeminiExecuteTurnWithToolCalling(t *testing.T) {
 							Role: "model",
 							Parts: []Part{
 								{
+									ThoughtSignature: "test_thought_sig_abc123",
 									FunctionCall: &FunctionCall{
-										Name: "get_ship_status",
-										Args: map[string]any{},
+										Name:             "get_ship_status",
+										Args:             map[string]any{},
+										ThoughtSignature: "test_thought_sig_abc123",
 									},
 								},
 							},
@@ -102,7 +104,25 @@ func TestGeminiExecuteTurnWithToolCalling(t *testing.T) {
 			return
 		}
 
-		// Round 2: Model returns final text with tool result
+		// Round 2: verify thought_signature was preserved in the history sent back
+		var req GenerateContentRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed decoding round 2 request: %v", err)
+		}
+		foundSig := false
+		for _, msg := range req.Contents {
+			for _, p := range msg.Parts {
+				if p.ThoughtSignature == "test_thought_sig_abc123" ||
+					(p.FunctionCall != nil && p.FunctionCall.ThoughtSignature == "test_thought_sig_abc123") {
+					foundSig = true
+				}
+			}
+		}
+		if !foundSig {
+			t.Errorf("round 2 request missing thought_signature in echoed model turn")
+		}
+
+		// Model returns final text with tool result
 		resp := GenerateContentResponse{
 			Candidates: []struct {
 				Content struct {

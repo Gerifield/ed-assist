@@ -59,7 +59,7 @@ func WithMCPCaller(caller MCPCaller) Option {
 // NewClient creates a new Gemini client.
 func NewClient(apiKey, model string, opts ...Option) *Client {
 	if model == "" {
-		model = "gemini-3.8-flash-lite"
+		model = "gemini-flash-lite-latest"
 	}
 	c := &Client{
 		apiKey:     apiKey,
@@ -76,9 +76,36 @@ func NewClient(apiKey, model string, opts ...Option) *Client {
 // Part represents a part of a message (text, functionCall, functionResponse, inlineData).
 type Part struct {
 	Text             string            `json:"text,omitempty"`
+	Thought          bool              `json:"thought,omitempty"`
+	ThoughtSignature string            `json:"thought_signature,omitempty"`
 	FunctionCall     *FunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *FunctionResponse `json:"functionResponse,omitempty"`
 	InlineData       *InlineData       `json:"inlineData,omitempty"`
+}
+
+// UnmarshalJSON captures both snake_case and camelCase thought signatures.
+func (p *Part) UnmarshalJSON(data []byte) error {
+	type Alias Part
+	aux := struct {
+		*Alias
+		CamelSig string `json:"thoughtSignature"`
+	}{
+		Alias: (*Alias)(p),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if p.ThoughtSignature == "" && aux.CamelSig != "" {
+		p.ThoughtSignature = aux.CamelSig
+	}
+	if p.FunctionCall != nil {
+		if p.ThoughtSignature != "" && p.FunctionCall.ThoughtSignature == "" {
+			p.FunctionCall.ThoughtSignature = p.ThoughtSignature
+		} else if p.FunctionCall.ThoughtSignature != "" && p.ThoughtSignature == "" {
+			p.ThoughtSignature = p.FunctionCall.ThoughtSignature
+		}
+	}
+	return nil
 }
 
 // InlineData represents inline binary media (e.g. audio/webm or audio/wav).
@@ -89,8 +116,27 @@ type InlineData struct {
 
 // FunctionCall represents Gemini requesting tool invocation.
 type FunctionCall struct {
-	Name string         `json:"name"`
-	Args map[string]any `json:"args,omitempty"`
+	Name             string         `json:"name"`
+	Args             map[string]any `json:"args,omitempty"`
+	ThoughtSignature string         `json:"thought_signature,omitempty"`
+}
+
+// UnmarshalJSON captures both snake_case and camelCase thought signatures.
+func (fc *FunctionCall) UnmarshalJSON(data []byte) error {
+	type Alias FunctionCall
+	aux := struct {
+		*Alias
+		CamelSig string `json:"thoughtSignature"`
+	}{
+		Alias: (*Alias)(fc),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if fc.ThoughtSignature == "" && aux.CamelSig != "" {
+		fc.ThoughtSignature = aux.CamelSig
+	}
+	return nil
 }
 
 // FunctionResponse represents the result of tool execution returned to Gemini.

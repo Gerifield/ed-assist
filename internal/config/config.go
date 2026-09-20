@@ -34,7 +34,7 @@ type Config struct {
 	// Web client & Gemini assistant settings
 	WebAddr           string `json:"web_addr"`            // e.g. "127.0.0.1:3000"
 	GeminiAPIKey      string `json:"gemini_api_key"`      // or GEMINI_API_KEY env
-	GeminiModel       string `json:"gemini_model"`        // default: "gemini-3.8-flash-lite"
+	GeminiModel       string `json:"gemini_model"`        // default: "gemini-flash-lite-latest"
 	GeminiMCPMode     string `json:"gemini_mcp_mode"`     // "http" or "stdio" (or "inprocess")
 	GeminiMCPEndpoint string `json:"gemini_mcp_endpoint"` // e.g. "http://127.0.0.1:8080/sse" or path to binary for stdio
 
@@ -63,7 +63,7 @@ func DefaultConfig() *Config {
 		RetryDelay:     25 * time.Millisecond,
 		LogLevel:       "info",
 		WebAddr:        "127.0.0.1:3000",
-		GeminiModel:    "gemini-3.8-flash-lite",
+		GeminiModel:    "gemini-flash-lite-latest",
 		GeminiMCPMode:  "http",
 		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
 		VoiceGateThreshold: 40,
