@@ -299,19 +299,52 @@ Or specify a dedicated config file:
 
 ---
 
+## Web Cockpit Assistant (COVAS)
+
+`ed-assist-web` is a standalone web application providing an in-cockpit AI voice & text copilot powered by Google Gemini (default: `gemini-3.8-flash-lite`) and integrated with the MCP server tools.
+
+### Features
+- **Minimal, responsive dark HUD**: Built with pure HTML5 and vanilla JavaScript (zero frontend dependencies or node build steps).
+- **Manual & Automatic Voice Commands**:
+  - **Manual Push-to-Record (`REC`)**: Click to start recording cockpit voice, click `STOP` to encode and transmit.
+  - **Automatic Noise Gate (`VOX`)**: Real-time voice activity detection with interactive threshold slider (default: 40%) and live input volume visualizer. When speaking above the threshold, recording automatically triggers (slider glows red); when silence is detected for the configured duration (default: 2s, set via `voice_silence_ms`), the audio is automatically transmitted to Gemini, while the VOX listener remains active for the next command.
+- **Scroll-to-Bottom Conversation Stream**: Displays full commander inquiries and COVAS responses in chronological order, automatically scrolling to the latest message.
+- **Flexible MCP Connectivity**:
+  - `inprocess` (default): All-in-one execution running telemetry reader, SQLite storage, DirectInput game control, and MCP tools directly in the web binary.
+  - `http`: Connects to an external `ed-assist` server serving MCP over HTTP/SSE.
+  - `stdio`: Spawns a local `ed-assist` binary subprocess over stdin/stdout.
+
+### Launching `ed-assist-web`
+```bash
+# Set your Gemini API key (or add gemini_api_key to config.ini)
+export GEMINI_API_KEY="your-gemini-api-key"
+
+# Build and run
+make build-web
+./bin/ed-assist-web
+```
+Open your browser at `http://127.0.0.1:3000`.
+
+---
+
 ## Project Structure
 
 ```
 ed-assist/
 ├── cmd/
-│   └── ed-assist/
-│       └── main.go              # Application entrypoint, CLI flags, display output & MCP runner
+│   ├── ed-assist/
+│   │   └── main.go              # Core CLI application & MCP server runner
+│   └── ed-assist-web/
+│       └── main.go              # Standalone web AI cockpit assistant (COVAS)
 ├── internal/
 │   ├── config/
-│   │   ├── config.go            # config.ini parsing and path auto-detection
+│   │   ├── config.go            # config.ini parsing (telemetry, MCP, web, Gemini)
 │   │   └── config_test.go
 │   ├── flags/
 │   │   └── flags.go             # Bitmask constants for Flags, Flags2, and GuiFocus
+│   ├── gemini/
+│   │   ├── client.go            # Gemini API client with audio/text multi-turn & MCP tools
+│   │   └── client_test.go
 │   ├── input/
 │   │   ├── binds.go             # Elite Dangerous .binds XML parser and preset detector
 │   │   ├── binds_test.go
@@ -336,10 +369,17 @@ ed-assist/
 │   ├── tracker/
 │   │   ├── tracker.go           # Journal & Status.json event tracking for systems
 │   │   └── tracker_test.go
-│   └── watcher/
-│       ├── watcher.go           # Cross-platform fsnotify watcher
-│       └── watcher_test.go
-├── Makefile                     # Build & Windows cross-compilation recipes
+│   ├── watcher/
+│   │   ├── watcher.go           # Cross-platform fsnotify watcher
+│   │   └── watcher_test.go
+│   └── web/
+│       ├── mcp_bridge.go        # MCP client bridge (inprocess, http, stdio)
+│       ├── mcp_bridge_test.go
+│       ├── server.go            # Embedded static HTTP file server & /api/chat handler
+│       ├── server_test.go
+│       └── static/
+│           └── index.html       # Responsive dark cockpit HUD with voice recording
+├── Makefile                     # Multi-binary & cross-compilation recipes
 ├── config.ini.example           # Example configuration template
 ├── go.mod
 └── go.sum

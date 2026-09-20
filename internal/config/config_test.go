@@ -171,3 +171,50 @@ bindings_path = /tmp/custom/bindings
 		t.Errorf("expected /tmp/custom/bindings, got %s", cfg.BindingsPath)
 	}
 }
+
+func TestLoadWebAndGeminiConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+web_addr = 4000
+gemini_api_key = test-key-123
+gemini_model = gemini-3.8-flash-lite
+gemini_mcp_mode = stdio
+gemini_mcp_endpoint = /path/to/ed-assist
+voice_gate_threshold = 45
+voice_silence_ms = 1500
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.WebAddr != "127.0.0.1:4000" {
+		t.Errorf("expected WebAddr 127.0.0.1:4000, got %s", cfg.WebAddr)
+	}
+	if cfg.GeminiAPIKey != "test-key-123" {
+		t.Errorf("expected GeminiAPIKey test-key-123, got %s", cfg.GeminiAPIKey)
+	}
+	if cfg.GeminiModel != "gemini-3.8-flash-lite" {
+		t.Errorf("expected GeminiModel gemini-3.8-flash-lite, got %s", cfg.GeminiModel)
+	}
+	if cfg.GeminiMCPMode != "stdio" {
+		t.Errorf("expected GeminiMCPMode stdio, got %s", cfg.GeminiMCPMode)
+	}
+	if cfg.GeminiMCPEndpoint != "/path/to/ed-assist" {
+		t.Errorf("expected GeminiMCPEndpoint /path/to/ed-assist, got %s", cfg.GeminiMCPEndpoint)
+	}
+	if cfg.VoiceGateThreshold != 45 {
+		t.Errorf("expected VoiceGateThreshold 45, got %d", cfg.VoiceGateThreshold)
+	}
+	if cfg.VoiceSilenceMs != 1500 {
+		t.Errorf("expected VoiceSilenceMs 1500, got %d", cfg.VoiceSilenceMs)
+	}
+}
+

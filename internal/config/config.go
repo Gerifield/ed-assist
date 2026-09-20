@@ -30,6 +30,17 @@ type Config struct {
 	RetryDelay     time.Duration `json:"retry_delay"`
 	LogLevel       string        `json:"log_level"`
 	LogFile        string        `json:"log_file"`
+
+	// Web client & Gemini assistant settings
+	WebAddr           string `json:"web_addr"`            // e.g. "127.0.0.1:3000"
+	GeminiAPIKey      string `json:"gemini_api_key"`      // or GEMINI_API_KEY env
+	GeminiModel       string `json:"gemini_model"`        // default: "gemini-3.8-flash-lite"
+	GeminiMCPMode     string `json:"gemini_mcp_mode"`     // "http" or "stdio" (or "inprocess")
+	GeminiMCPEndpoint string `json:"gemini_mcp_endpoint"` // e.g. "http://127.0.0.1:8080/sse" or path to binary for stdio
+
+	// Noise gate / VOX voice recording settings
+	VoiceGateThreshold int `json:"voice_gate_threshold"` // default: 40 (0-100 percent)
+	VoiceSilenceMs     int `json:"voice_silence_ms"`     // default: 2000 (ms)
 }
 
 // DefaultConfig returns the default configuration.
@@ -51,6 +62,12 @@ func DefaultConfig() *Config {
 		MaxRetries:     3,
 		RetryDelay:     25 * time.Millisecond,
 		LogLevel:       "info",
+		WebAddr:        "127.0.0.1:3000",
+		GeminiModel:    "gemini-3.8-flash-lite",
+		GeminiMCPMode:  "http",
+		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
+		VoiceGateThreshold: 40,
+		VoiceSilenceMs:     2000,
 	}
 }
 
@@ -213,6 +230,55 @@ func Load(configFileOverride string) (*Config, error) {
 
 	if lf := lookupProp(props, "logfile", "log_file"); lf != "" {
 		cfg.LogFile = lf
+	}
+
+	if wa := lookupProp(props, "web_addr", "web_address", "web_listen", "web_port"); wa != "" {
+		if _, err := strconv.Atoi(wa); err == nil {
+			cfg.WebAddr = "127.0.0.1:" + wa
+		} else if strings.HasPrefix(wa, ":") {
+			cfg.WebAddr = "127.0.0.1" + wa
+		} else {
+			cfg.WebAddr = wa
+		}
+	}
+
+	if key := lookupProp(props, "gemini_api_key", "api_key", "gemini_key"); key != "" {
+		cfg.GeminiAPIKey = key
+	} else if envKey := os.Getenv("GEMINI_API_KEY"); envKey != "" {
+		cfg.GeminiAPIKey = envKey
+	}
+
+	if model := lookupProp(props, "gemini_model", "model"); model != "" {
+		cfg.GeminiModel = model
+	}
+
+	if mcpMode := lookupProp(props, "gemini_mcp_mode", "mcp_client_mode", "gemini_mcp_transport"); mcpMode != "" {
+		modeLower := strings.ToLower(mcpMode)
+		if modeLower == "stdio" || modeLower == "stdin" {
+			cfg.GeminiMCPMode = "stdio"
+		} else if modeLower == "web" || modeLower == "http" || modeLower == "sse" {
+			cfg.GeminiMCPMode = "http"
+		} else if modeLower == "inprocess" || modeLower == "internal" || modeLower == "direct" {
+			cfg.GeminiMCPMode = "inprocess"
+		}
+	}
+
+	if ep := lookupProp(props, "gemini_mcp_endpoint", "mcp_endpoint", "mcp_url"); ep != "" {
+		cfg.GeminiMCPEndpoint = ep
+	}
+
+	if threshStr := lookupProp(props, "voice_gate_threshold", "gate_threshold", "noise_gate_threshold", "vox_threshold"); threshStr != "" {
+		if t, err := strconv.Atoi(threshStr); err == nil && t >= 0 && t <= 100 {
+			cfg.VoiceGateThreshold = t
+		}
+	}
+
+	if silenceStr := lookupProp(props, "voice_silence_ms", "silence_ms", "noise_gate_silence_ms", "vox_silence_ms"); silenceStr != "" {
+		if s, err := strconv.Atoi(silenceStr); err == nil && s > 0 {
+			cfg.VoiceSilenceMs = s
+		} else if d, err := time.ParseDuration(silenceStr); err == nil && d > 0 {
+			cfg.VoiceSilenceMs = int(d / time.Millisecond)
+		}
 	}
 
 	return cfg, nil

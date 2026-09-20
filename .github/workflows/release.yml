@@ -64,6 +64,11 @@ jobs:
               -o "${STAGE_PATH}/${BIN_NAME}" \
               ./cmd/ed-assist
 
+            CGO_ENABLED=0 GOOS="${OS}" GOARCH="${ARCH}" go build \
+              -ldflags="-s -w -X main.Version=${TAG}" \
+              -o "${STAGE_PATH}/ed-assist-web${EXT}" \
+              ./cmd/ed-assist-web
+
             # Include documentation and configuration template
             cp config.ini.example "${STAGE_PATH}/"
             cp README.md "${STAGE_PATH}/"
@@ -73,6 +78,7 @@ jobs:
               (cd "${BUILD_DIR}" && zip -q -r "../${DIST_DIR}/${STAGE_NAME}.zip" "${STAGE_NAME}")
               # Also provide direct standalone .exe for quick download
               cp "${STAGE_PATH}/${BIN_NAME}" "${DIST_DIR}/ed-assist-${TAG}-${OS}-${ARCH}.exe"
+              cp "${STAGE_PATH}/ed-assist-web${EXT}" "${DIST_DIR}/ed-assist-web-${TAG}-${OS}-${ARCH}.exe"
             else
               # Create Linux/macOS .tar.gz archive
               (cd "${BUILD_DIR}" && tar -czf "../${DIST_DIR}/${STAGE_NAME}.tar.gz" "${STAGE_NAME}")
