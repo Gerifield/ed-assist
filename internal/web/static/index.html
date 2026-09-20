@@ -112,9 +112,7 @@
       max-width: 85%;
       padding: 10px 14px;
       border-radius: 4px;
-      line-height: 1.5;
       font-size: 0.92rem;
-      white-space: pre-wrap;
       word-break: break-word;
     }
 
@@ -135,10 +133,70 @@
     .msg-sender {
       font-size: 0.72rem;
       text-transform: uppercase;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
       opacity: 0.75;
       letter-spacing: 1px;
     }
+
+    .msg-content {
+      line-height: 1.55;
+    }
+
+    .msg-content strong {
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .msg-content em {
+      color: #ffd280;
+      font-style: italic;
+    }
+
+    .msg-content code {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 119, 0, 0.3);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      color: #00e5ff;
+    }
+
+    .msg-content pre {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 119, 0, 0.25);
+      padding: 8px 12px;
+      border-radius: 4px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+
+    .msg-content pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+
+    .msg-content .md-gap {
+      height: 8px;
+    }
+
+    .msg-content .md-li {
+      margin-left: 6px;
+      padding: 2px 0;
+    }
+
+    .msg-content .md-h1, .msg-content .md-h2, .msg-content .md-h3 {
+      font-weight: bold;
+      color: var(--text-bright);
+      margin: 6px 0 2px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .msg-content .md-h1 { font-size: 1.1em; }
+    .msg-content .md-h2 { font-size: 1.0em; }
+    .msg-content .md-h3 { font-size: 0.92em; }
 
     .msg-loading {
       align-self: flex-start;
@@ -502,6 +560,53 @@
       messagesBox.scrollTop = messagesBox.scrollHeight;
     }
 
+    function formatMarkdown(raw) {
+      if (!raw) return '';
+
+      // 1. Basic HTML escaping to prevent XSS
+      let text = raw
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+      // 2. Fenced code blocks ```lang\ncode```
+      text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+        return '<pre><code>' + code.trim() + '</code></pre>';
+      });
+
+      // 3. Inline code `code`
+      text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+      // 4. Headers: ### h3, ## h2, # h1
+      text = text.replace(/^### (.*$)/gm, '<div class="md-h3">$1</div>');
+      text = text.replace(/^## (.*$)/gm, '<div class="md-h2">$1</div>');
+      text = text.replace(/^# (.*$)/gm, '<div class="md-h1">$1</div>');
+
+      // 5. Bold & Italic: ***text***
+      text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+
+      // 6. Bold: **text** or __text__
+      text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+      // 7. Italic: *text* or _text_
+      text = text.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+      text = text.replace(/(^|\s)_([^_]+)_(?=\s|$|[.,!?:;])/g, '$1<em>$2</em>');
+
+      // 8. Unordered lists: lines starting with * or -
+      text = text.replace(/^[\*\-]\s+(.*)$/gm, '<div class="md-li">• $1</div>');
+
+      // 9. Ordered lists: lines starting with 1. 2. etc.
+      text = text.replace(/^(\d+)\.\s+(.*)$/gm, '<div class="md-li">$1. $2</div>');
+
+      // 10. Paragraph breaks & single newlines
+      text = text.replace(/\n\n+/g, '<div class="md-gap"></div>');
+      text = text.replace(/\n/g, '<br>');
+
+      return text;
+    }
+
     function appendMessage(sender, text, isUser = false) {
       const msgDiv = document.createElement('div');
       msgDiv.className = 'msg ' + (isUser ? 'msg-user' : 'msg-ai');
@@ -511,8 +616,10 @@
       senderDiv.textContent = sender;
       msgDiv.appendChild(senderDiv);
 
-      const textNode = document.createTextNode(text);
-      msgDiv.appendChild(textNode);
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'msg-content';
+      contentDiv.innerHTML = formatMarkdown(text);
+      msgDiv.appendChild(contentDiv);
 
       messagesBox.appendChild(msgDiv);
       scrollToBottom();

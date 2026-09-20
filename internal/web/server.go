@@ -152,6 +152,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hasAudio := req.AudioB64 != ""
+	if req.Prompt != "" {
+		slog.Info("received user command", "prompt", req.Prompt, "has_audio", hasAudio)
+	} else if hasAudio {
+		slog.Info("received user command", "type", "voice_audio", "mime", req.AudioMime)
+	} else {
+		slog.Info("received user command", "type", "empty")
+	}
+
 	s.historyMu.Lock()
 	historyCopy := make([]gemini.ChatMessage, len(s.history))
 	copy(historyCopy, s.history)
@@ -165,10 +174,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	reply, err := s.gemini.ExecuteTurn(r.Context(), historyCopy, req.Prompt, audioBytes, req.AudioMime)
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
+		slog.Error("failed executing user command", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(ChatResponse{Error: err.Error()})
 		return
 	}
+
+	slog.Info("command completed successfully", "reply_len", len(reply))
 
 	// Update conversation history
 	s.historyMu.Lock()

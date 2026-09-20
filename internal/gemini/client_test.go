@@ -70,7 +70,7 @@ func TestGeminiExecuteTurnWithToolCalling(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rounds++
 		if rounds == 1 {
-			// Round 1: Model asks to call get_ship_status with thought_signature
+			// Round 1: Model asks to call get_ship_status with thought_signature on Part
 			resp := GenerateContentResponse{
 				Candidates: []struct {
 					Content struct {
@@ -89,9 +89,9 @@ func TestGeminiExecuteTurnWithToolCalling(t *testing.T) {
 								{
 									ThoughtSignature: "test_thought_sig_abc123",
 									FunctionCall: &FunctionCall{
-										Name:             "get_ship_status",
-										Args:             map[string]any{},
-										ThoughtSignature: "test_thought_sig_abc123",
+										ID:   "call_abc",
+										Name: "get_ship_status",
+										Args: map[string]any{},
 									},
 								},
 							},
@@ -104,22 +104,25 @@ func TestGeminiExecuteTurnWithToolCalling(t *testing.T) {
 			return
 		}
 
-		// Round 2: verify thought_signature was preserved in the history sent back
+		// Round 2: verify thought_signature is on Part, NOT inside functionCall, and ID is preserved
 		var req GenerateContentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("failed decoding round 2 request: %v", err)
 		}
-		foundSig := false
+
+		foundSigOnPart := false
 		for _, msg := range req.Contents {
 			for _, p := range msg.Parts {
-				if p.ThoughtSignature == "test_thought_sig_abc123" ||
-					(p.FunctionCall != nil && p.FunctionCall.ThoughtSignature == "test_thought_sig_abc123") {
-					foundSig = true
+				if p.ThoughtSignature == "test_thought_sig_abc123" {
+					foundSigOnPart = true
+				}
+				if p.FunctionResponse != nil && p.FunctionResponse.ID != "call_abc" {
+					t.Errorf("expected FunctionResponse ID 'call_abc', got '%s'", p.FunctionResponse.ID)
 				}
 			}
 		}
-		if !foundSig {
-			t.Errorf("round 2 request missing thought_signature in echoed model turn")
+		if !foundSigOnPart {
+			t.Errorf("round 2 request missing thought_signature on echoed model Part")
 		}
 
 		// Model returns final text with tool result
