@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"ed-assist/internal/gemini"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -270,6 +272,93 @@ voice_echo_protection = false
 	}
 	if cfg.VoiceEchoProtection {
 		t.Errorf("expected VoiceEchoProtection false, got true")
+	}
+}
+
+func TestLoadSystemPrompt(t *testing.T) {
+	// 1. Default should be gemini.DefaultSystemPrompt
+	cfgDef := DefaultConfig()
+	if cfgDef.SystemPrompt != gemini.DefaultSystemPrompt {
+		t.Errorf("expected default SystemPrompt, got %s", cfgDef.SystemPrompt)
+	}
+
+	// 2. Custom inline system prompt
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+	content := `
+[general]
+system_prompt = Custom pirate COVAS prompt.
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SystemPrompt != "Custom pirate COVAS prompt." {
+		t.Errorf("expected 'Custom pirate COVAS prompt.', got '%s'", cfg.SystemPrompt)
+	}
+
+	// 3. Multi-line indented system prompt
+	multilineContent := `
+[general]
+system_prompt = You are a cockpit computer.
+    Always speak in short sentences.
+    Confirm commands immediately.
+`
+	if err := os.WriteFile(iniPath, []byte(multilineContent), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expectedMultiline := "You are a cockpit computer.\nAlways speak in short sentences.\nConfirm commands immediately."
+	if cfg.SystemPrompt != expectedMultiline {
+		t.Errorf("expected '%s', got '%s'", expectedMultiline, cfg.SystemPrompt)
+	}
+
+	// 4. Custom system prompt loaded from external file
+	promptFilePath := filepath.Join(tmpDir, "my_covas.txt")
+	filePromptText := "Custom prompt loaded from an external file."
+	if err := os.WriteFile(promptFilePath, []byte(filePromptText), 0644); err != nil {
+		t.Fatalf("failed to write prompt file: %v", err)
+	}
+
+	fileContent := `
+[general]
+system_prompt = ` + promptFilePath + `
+`
+	if err := os.WriteFile(iniPath, []byte(fileContent), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SystemPrompt != filePromptText {
+		t.Errorf("expected '%s', got '%s'", filePromptText, cfg.SystemPrompt)
+	}
+
+	// 5. Empty system_prompt in INI falls back to default
+	emptyContent := `
+[general]
+system_prompt = 
+`
+	if err := os.WriteFile(iniPath, []byte(emptyContent), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SystemPrompt != gemini.DefaultSystemPrompt {
+		t.Errorf("expected default prompt when empty, got '%s'", cfg.SystemPrompt)
 	}
 }
 

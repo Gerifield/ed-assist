@@ -67,6 +67,11 @@ gemini_api_key =
 ; Gemini model to use for chat & voice reasoning (default: gemini-flash-lite-latest)
 gemini_model = gemini-flash-lite-latest
 
+; Custom system instruction prompt for COVAS / Gemini assistant.
+; If left empty or omitted, the default Elite Dangerous COVAS cockpit assistant prompt is used.
+; You can provide text directly (single line or indented multi-line) or a path to a text file (e.g. covas_prompt.txt).
+system_prompt = 
+
 ; MCP connection mode for ed-assist-web:
 ; "inprocess" = run MCP server & game watcher directly inside the web binary (all-in-one)
 ; "http"      = connect to external ed-assist running MCP over HTTP/SSE (default: http://127.0.0.1:8080/sse)

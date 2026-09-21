@@ -183,3 +183,65 @@ func TestGeminiExecuteTurnRequiresAPIKey(t *testing.T) {
 		t.Fatalf("expected error when API key is missing")
 	}
 }
+
+func TestGeminiSystemPrompt(t *testing.T) {
+	// 1. Default system prompt
+	cDef := NewClient("test-key", "gemini-flash-lite-latest")
+	if cDef.SystemPrompt() != DefaultSystemPrompt {
+		t.Errorf("expected DefaultSystemPrompt, got %s", cDef.SystemPrompt())
+	}
+
+	// 2. Custom system prompt via Option
+	customPrompt := "You are a specialized pirate COVAS assistant."
+	var capturedPrompt string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GenerateContentRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.SystemInstruction != nil && len(req.SystemInstruction.Parts) > 0 {
+			capturedPrompt = req.SystemInstruction.Parts[0].Text
+		}
+		resp := GenerateContentResponse{
+			Candidates: []struct {
+				Content struct {
+					Role  string `json:"role"`
+					Parts []Part `json:"parts"`
+				} `json:"content"`
+				FinishReason string `json:"finishReason"`
+			}{
+				{
+					Content: struct {
+						Role  string `json:"role"`
+						Parts []Part `json:"parts"`
+					}{
+						Role:  "model",
+						Parts: []Part{{Text: "Ahoy commander."}},
+					},
+					FinishReason: "STOP",
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	cCustom := NewClient("test-key", "gemini-flash-lite-latest",
+		WithSystemPrompt(customPrompt),
+		WithBaseURL(ts.URL),
+		WithHTTPClient(ts.Client()),
+	)
+
+	if cCustom.SystemPrompt() != customPrompt {
+		t.Errorf("expected custom prompt '%s', got '%s'", customPrompt, cCustom.SystemPrompt())
+	}
+
+	reply, err := cCustom.ExecuteTurn(context.Background(), nil, "Greeting", nil, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "Ahoy commander." {
+		t.Errorf("expected 'Ahoy commander.', got '%s'", reply)
+	}
+	if capturedPrompt != customPrompt {
+		t.Errorf("expected captured system prompt in HTTP request '%s', got '%s'", customPrompt, capturedPrompt)
+	}
+}

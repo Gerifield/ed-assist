@@ -19,13 +19,20 @@ type MCPCaller interface {
 	CallTool(ctx context.Context, name string, arguments map[string]any) (string, error)
 }
 
+// DefaultSystemPrompt is the default system instruction given to the COVAS assistant.
+const DefaultSystemPrompt = "You are an Elite Dangerous AI Cockpit Assistant (COVAS). " +
+	"You have direct access to the ship's telemetry, navigation status, SQLite visited/targeted system history, and in-game controls via MCP tools. " +
+	"When the commander asks for status, navigation info, fuel, visited systems, or commands a ship action (such as landing gear, lights, hardpoints, cargo scoop, night vision, boost, pips), " +
+	"call the appropriate MCP tool to inspect or command the ship. Keep responses immersive, concise, and helpful like a ship computer."
+
 // Client interacts with the Google Gemini API (generateContent) with function calling / MCP support.
 type Client struct {
-	apiKey     string
-	model      string
-	mcpCaller  MCPCaller
-	httpClient *http.Client
-	baseURL    string
+	apiKey       string
+	model        string
+	systemPrompt string
+	mcpCaller    MCPCaller
+	httpClient   *http.Client
+	baseURL      string
 }
 
 // Option configures a Client.
@@ -56,16 +63,34 @@ func WithMCPCaller(caller MCPCaller) Option {
 	}
 }
 
+// WithSystemPrompt sets a custom system instruction prompt for Gemini.
+func WithSystemPrompt(prompt string) Option {
+	return func(c *Client) {
+		if strings.TrimSpace(prompt) != "" {
+			c.systemPrompt = strings.TrimSpace(prompt)
+		}
+	}
+}
+
+// SystemPrompt returns the currently configured system instruction prompt.
+func (c *Client) SystemPrompt() string {
+	if strings.TrimSpace(c.systemPrompt) != "" {
+		return c.systemPrompt
+	}
+	return DefaultSystemPrompt
+}
+
 // NewClient creates a new Gemini client.
 func NewClient(apiKey, model string, opts ...Option) *Client {
 	if model == "" {
 		model = "gemini-flash-lite-latest"
 	}
 	c := &Client{
-		apiKey:     apiKey,
-		model:      model,
-		httpClient: &http.Client{Timeout: 90 * time.Second},
-		baseURL:    "https://generativelanguage.googleapis.com/v1beta",
+		apiKey:       apiKey,
+		model:        model,
+		systemPrompt: DefaultSystemPrompt,
+		httpClient:   &http.Client{Timeout: 90 * time.Second},
+		baseURL:      "https://generativelanguage.googleapis.com/v1beta",
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -243,10 +268,7 @@ func (c *Client) ExecuteTurn(ctx context.Context, history []ChatMessage, userPro
 		Role: "user",
 		Parts: []Part{
 			{
-				Text: "You are an Elite Dangerous AI Cockpit Assistant (COVAS). " +
-					"You have direct access to the ship's telemetry, navigation status, SQLite visited/targeted system history, and in-game controls via MCP tools. " +
-					"When the commander asks for status, navigation info, fuel, visited systems, or commands a ship action (such as landing gear, lights, hardpoints, cargo scoop, night vision, boost, pips), " +
-					"call the appropriate MCP tool to inspect or command the ship. Keep responses immersive, concise, and helpful like a ship computer.",
+				Text: c.SystemPrompt(),
 			},
 		},
 	}

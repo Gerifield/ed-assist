@@ -59,6 +59,9 @@ func TestWebServerInfoAndStatic(t *testing.T) {
 	if info["voice_echo_protection"] != true {
 		t.Errorf("expected voice_echo_protection true by default, got %v", info["voice_echo_protection"])
 	}
+	if info["system_prompt"] != gemini.DefaultSystemPrompt {
+		t.Errorf("expected default system_prompt, got %v", info["system_prompt"])
+	}
 
 	// Test with WithEchoProtection(false)
 	serverNoEcho := NewServer("127.0.0.1:0", geminiClient, nil, "gemini-3.8-flash-lite", 42, 1800, WithEchoProtection(false))
