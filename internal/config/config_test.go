@@ -221,3 +221,28 @@ voice_silence_ms = 1500
 	}
 }
 
+func TestLoadSystemCacheConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+system_cache_hours = 12
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.SystemCacheHours != 12 {
+		t.Errorf("expected SystemCacheHours 12, got %d", cfg.SystemCacheHours)
+	}
+	if cfg.SystemCacheTTL != 12*time.Hour {
+		t.Errorf("expected SystemCacheTTL 12h, got %v", cfg.SystemCacheTTL)
+	}
+}
+

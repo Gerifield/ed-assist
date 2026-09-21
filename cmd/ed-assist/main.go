@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"ed-assist/internal/config"
 	"ed-assist/internal/input"
@@ -75,6 +76,7 @@ func main() {
 	retryDelayFlag := flag.Duration("retry-delay", 0, "Delay time between quick retries (default: 25ms)")
 	trackFlag := flag.Bool("track", false, "Enable SQLite tracking of visited and targeted systems (default: false)")
 	flag.BoolVar(trackFlag, "tracking", false, "Enable SQLite tracking of visited and targeted systems (alias)")
+	cacheHoursFlag := flag.Int("cache-hours", 0, "System info and external API cache TTL in hours (default: 8)")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	flag.Parse()
 
@@ -127,6 +129,10 @@ func main() {
 	}
 	if *pollIntervalFlag > 0 {
 		cfg.PollInterval = *pollIntervalFlag
+	}
+	if *cacheHoursFlag > 0 {
+		cfg.SystemCacheHours = *cacheHoursFlag
+		cfg.SystemCacheTTL = time.Duration(*cacheHoursFlag) * time.Hour
 	}
 
 	setupLogging(cfg.LogLevel, cfg.LogFile, cfg.EnableMCP && cfg.MCPTransport == "stdio")
@@ -208,7 +214,7 @@ func main() {
 
 	// If MCP mode is enabled, run the MCP server
 	if cfg.EnableMCP {
-		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController)
+		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController, mcpserver.WithCacheTTL(cfg.SystemCacheTTL))
 
 		if cfg.MCPTransport == "http" {
 			// In HTTP mode, run MCP server in background and fall through to terminal event display
@@ -220,12 +226,12 @@ func main() {
 			}()
 			slog.Info("MCP server ready over HTTP/SSE",
 				"sse_endpoint", fmt.Sprintf("http://%s/sse", cfg.MCPAddr),
-				"tools", 10,
+				"tools", 18,
 				"resources", 5,
 			)
 		} else {
 			// In stdio mode, stdio is reserved for JSON-RPC communication
-			slog.Info("MCP server ready on stdio", "tools", 10, "resources", 5)
+			slog.Info("MCP server ready on stdio", "tools", 18, "resources", 5)
 
 			// Forward status updates to tracker in background if tracking enabled
 			if sysTracker != nil {

@@ -7,8 +7,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
+	"ed-assist/internal/edapi"
 	"ed-assist/internal/input"
 	"ed-assist/internal/parser"
 	"ed-assist/internal/reader"
@@ -24,27 +26,62 @@ type StatusProvider interface {
 	ReadOnce() (*parser.Status, error)
 }
 
+// Option configures MCPServer.
+type Option func(*MCPServer)
+
+// WithCacheTTL sets external API cache TTL.
+func WithCacheTTL(ttl time.Duration) Option {
+	return func(s *MCPServer) {
+		if ttl > 0 {
+			s.cacheTTL = ttl
+		}
+	}
+}
+
+// WithEDAPIClient overrides the EDAPI client.
+func WithEDAPIClient(client *edapi.Client) Option {
+	return func(s *MCPServer) {
+		if client != nil {
+			s.edapi = client
+		}
+	}
+}
+
 // MCPServer wraps the mark3labs MCP server for Elite Dangerous.
 type MCPServer struct {
 	server     *server.MCPServer
 	provider   StatusProvider
 	store      *store.Store
 	controller *input.Controller
+	edapi      *edapi.Client
+	cacheTTL   time.Duration
 }
 
 // New creates and configures an MCP server exposing Elite Dangerous game status and controls.
-func New(provider StatusProvider, st *store.Store, ctrl *input.Controller) *MCPServer {
+func New(provider StatusProvider, st *store.Store, ctrl *input.Controller, opts ...Option) *MCPServer {
 	s := &MCPServer{
 		server: server.NewMCPServer(
 			"ed-assist",
 			"1.0.0",
 			server.WithToolCapabilities(false),
 			server.WithResourceCapabilities(false, false),
-			server.WithDescription("Elite Dangerous Status Assistant - exposes live ship data and optional in-game control"),
+			server.WithDescription("Elite Dangerous Status Assistant - exposes live ship data, in-game control, and galaxy intelligence"),
 		),
 		provider:   provider,
 		store:      st,
 		controller: ctrl,
+		cacheTTL:   8 * time.Hour,
+	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	if s.edapi == nil {
+		s.edapi = edapi.NewClient(
+			edapi.WithCacher(st),
+			edapi.WithCacheTTL(s.cacheTTL),
+		)
 	}
 
 	s.registerTools()
@@ -311,6 +348,220 @@ func (s *MCPServer) registerTools() {
 			return mcp.NewToolResultText(jsonStr), nil
 		},
 	)
+
+	// Tool 11: search_system (Query star system information from EDSM)
+	s.server.AddTool(
+		mcp.NewTool("search_system",
+			mcp.WithDescription("Look up star system information (3D coordinates, allegiance, government, economy, population, primary star) from EDSM. If system_name is omitted, defaults to the current target or current star system."),
+			mcp.WithString("system_name", mcp.Description("Name of the star system to look up (e.g. 'Sol', 'Colonia', 'Shinrarta Dezhra'). Defaults to current target/ship location if omitted.")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			sysName := s.resolveSystemName(request.GetString("system_name", ""))
+			if sysName == "" {
+				return mcp.NewToolResultError("system_name was not provided and could not be determined from current telemetry"), nil
+			}
+			res, err := s.edapi.SearchSystem(ctx, sysName)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("system lookup failed: %v", err)), nil
+			}
+			return mcp.NewToolResultText(res), nil
+		},
+	)
+
+	// Tool 12: nearest_systems (Find systems within a sphere radius from EDSM)
+	s.server.AddTool(
+		mcp.NewTool("nearest_systems",
+			mcp.WithDescription("Find star systems within a given radius (up to 100 light years) of a center star system or coordinates using EDSM."),
+			mcp.WithString("system_name", mcp.Description("Center star system name. If omitted, uses current target or ship position.")),
+			mcp.WithNumber("radius", mcp.Description("Search sphere radius in light years (ly), up to 100 ly (default: 25 ly)")),
+			mcp.WithBoolean("only_populated", mcp.Description("If true, filters out unpopulated systems to return only inhabited systems")),
+			mcp.WithNumber("x", mcp.Description("Galactic X coordinate (optional if system_name not given)")),
+			mcp.WithNumber("y", mcp.Description("Galactic Y coordinate (optional if system_name not given)")),
+			mcp.WithNumber("z", mcp.Description("Galactic Z coordinate (optional if system_name not given)")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			sysName := strings.TrimSpace(request.GetString("system_name", ""))
+			radius := request.GetFloat("radius", 25.0)
+			onlyPop := request.GetBool("only_populated", false)
+
+			args := request.GetArguments()
+			var xPtr, yPtr, zPtr *float64
+			if xVal, ok := args["x"].(float64); ok {
+				xPtr = &xVal
+			}
+			if yVal, ok := args["y"].(float64); ok {
+				yPtr = &yVal
+			}
+			if zVal, ok := args["z"].(float64); ok {
+				zPtr = &zVal
+			}
+
+			// If no systemName and no coordinates, try resolving from telemetry or store
+			if sysName == "" && (xPtr == nil || yPtr == nil || zPtr == nil) {
+				sysName = s.resolveSystemName("")
+				if sysName == "" && s.store != nil {
+					if visited, err := s.store.GetVisited(1); err == nil && len(visited) > 0 {
+						if visited[0].StarPosX != nil && visited[0].StarPosY != nil && visited[0].StarPosZ != nil {
+							xPtr = visited[0].StarPosX
+							yPtr = visited[0].StarPosY
+							zPtr = visited[0].StarPosZ
+						}
+					}
+				}
+			}
+
+			if sysName == "" && (xPtr == nil || yPtr == nil || zPtr == nil) {
+				return mcp.NewToolResultError("either system_name or (x, y, z) coordinates must be provided"), nil
+			}
+
+			res, err := s.edapi.NearestSystems(ctx, sysName, xPtr, yPtr, zPtr, radius, onlyPop)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("nearest systems lookup failed: %v", err)), nil
+			}
+			return mcp.NewToolResultText(res), nil
+		},
+	)
+
+	// Tool 13: system_stations (List stations, outposts, settlements from EDSM)
+	s.server.AddTool(
+		mcp.NewTool("system_stations",
+			mcp.WithDescription("List all starports, planetary outposts, settlements, and fleet carriers in a star system from EDSM, including commodity market, shipyard, and outfitting availability flags."),
+			mcp.WithString("system_name", mcp.Description("Name of the star system. Defaults to current target/ship location if omitted.")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			sysName := s.resolveSystemName(request.GetString("system_name", ""))
+			if sysName == "" {
+				return mcp.NewToolResultError("system_name was not provided and could not be determined from current telemetry"), nil
+			}
+			res, err := s.edapi.SystemStations(ctx, sysName)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("system stations lookup failed: %v", err)), nil
+			}
+			return mcp.NewToolResultText(res), nil
+		},
+	)
+
+	// Tool 14: station_market (Retrieve commodity market prices from EDSM)
+	s.server.AddTool(
+		mcp.NewTool("station_market",
+			mcp.WithDescription("Get live commodity market prices (buy/sell prices, stock, demand) at a specific station from EDSM. Useful for trade and mining sales."),
+			mcp.WithString("system_name", mcp.Required(), mcp.Description("Name of the star system (e.g. 'Sol', 'Shinrarta Dezhra')")),
+			mcp.WithString("station_name", mcp.Required(), mcp.Description("Name of the station or planetary port (e.g. 'Daedalus', 'Jameson Memorial')")),
+			mcp.WithString("filter_commodity", mcp.Description("Optional commodity name filter (e.g. 'Tritium', 'Gold', 'Painite') to filter results")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			sysName := request.GetString("system_name", "")
+			stnName := request.GetString("station_name", "")
+			filter := request.GetString("filter_commodity", "")
+			if sysName == "" || stnName == "" {
+				return mcp.NewToolResultError("both system_name and station_name are required"), nil
+			}
+			res, err := s.edapi.StationMarket(ctx, sysName, stnName, filter)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("station market lookup failed: %v", err)), nil
+			}
+			return mcp.NewToolResultText(res), nil
+		},
+	)
+
+	// Tool 15: system_factions (Get faction influence & BGS states from EDSM)
+	s.server.AddTool(
+		mcp.NewTool("system_factions",
+			mcp.WithDescription("Get Background Simulation (BGS) faction influence, allegiance, and government states for minor factions present in a star system from EDSM."),
+			mcp.WithString("system_name", mcp.Description("Name of the star system. Defaults to current target/ship location if omitted.")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			sysName := s.resolveSystemName(request.GetString("system_name", ""))
+			if sysName == "" {
+				return mcp.NewToolResultError("system_name was not provided and could not be determined from current telemetry"), nil
+			}
+			res, err := s.edapi.SystemFactions(ctx, sysName)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("system factions lookup failed: %v", err)), nil
+			}
+			return mcp.NewToolResultText(res), nil
+		},
+	)
+
+	// Tool 16: system_bodies (Get celestial bodies from EDSM)
+	s.server.AddTool(
+		mcp.NewTool("system_bodies",
+			mcp.WithDescription("Get celestial bodies (stars, planets, moons, gravity, landable status, rings, atmosphere) in a star system from EDSM."),
+			mcp.WithString("system_name", mcp.Description("Name of the star system. Defaults to current target/ship location if omitted.")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			sysName := s.resolveSystemName(request.GetString("system_name", ""))
+			if sysName == "" {
+				return mcp.NewToolResultError("system_name was not provided and could not be determined from current telemetry"), nil
+			}
+			res, err := s.edapi.SystemBodies(ctx, sysName)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("system bodies lookup failed: %v", err)), nil
+			}
+			return mcp.NewToolResultText(res), nil
+		},
+	)
+
+	// Tool 17: plot_neutron_route (High-speed neutron highway routing via Spansh)
+	s.server.AddTool(
+		mcp.NewTool("plot_neutron_route",
+			mcp.WithDescription("Plot a long-distance neutron highway jump route between two systems using the Spansh neutron router API."),
+			mcp.WithString("from", mcp.Required(), mcp.Description("Origin star system name (or 'current' to use current ship location)")),
+			mcp.WithString("to", mcp.Required(), mcp.Description("Destination star system name (e.g. 'Colonia', 'Sagittarius A*')")),
+			mcp.WithNumber("range", mcp.Required(), mcp.Description("Ship uncharged jump range in light years (e.g. 50.0, 65.5)")),
+			mcp.WithNumber("efficiency", mcp.Description("Routing efficiency percentage from 1 to 100 (default: 60)")),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			from := strings.TrimSpace(request.GetString("from", ""))
+			if strings.EqualFold(from, "current") || from == "" {
+				from = s.resolveSystemName("")
+			}
+			to := strings.TrimSpace(request.GetString("to", ""))
+			jumpRange := request.GetFloat("range", 50.0)
+			efficiency := request.GetInt("efficiency", 60)
+
+			if from == "" || to == "" {
+				return mcp.NewToolResultError("both 'from' and 'to' systems are required"), nil
+			}
+
+			res, err := s.edapi.PlotNeutronRoute(ctx, from, to, jumpRange, efficiency)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("neutron route planning failed: %v", err)), nil
+			}
+			return mcp.NewToolResultText(res), nil
+		},
+	)
+
+	// Tool 18: get_server_status (Elite Dangerous server status from EDSM)
+	s.server.AddTool(
+		mcp.NewTool("get_server_status",
+			mcp.WithDescription("Check current Elite Dangerous game server operational status from EDSM."),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			res, err := s.edapi.ServerStatus(ctx)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("server status lookup failed: %v", err)), nil
+			}
+			return mcp.NewToolResultText(res), nil
+		},
+	)
+}
+
+func (s *MCPServer) resolveSystemName(specified string) string {
+	if specified = strings.TrimSpace(specified); specified != "" {
+		return specified
+	}
+	if st, err := s.getStatus(); err == nil && st != nil {
+		if st.Destination.Name != "" {
+			return st.Destination.Name
+		}
+	}
+	if s.store != nil {
+		if visited, err := s.store.GetVisited(1); err == nil && len(visited) > 0 {
+			return visited[0].SystemName
+		}
+	}
+	return ""
 }
 
 func (s *MCPServer) registerResources() {

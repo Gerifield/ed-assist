@@ -174,6 +174,7 @@ When an update is detected, it displays a formatted summary:
 | `-retries` | `int` | `3` | Maximum quick retries on read/parse failure |
 | `-retry-delay` | `duration` | `25ms` | Delay time between quick retries (e.g. `25ms`, `50ms`) |
 | `-track` | `bool` | `false` | Enable optional SQLite tracking of visited and targeted systems (alias: `-tracking`) |
+| `-cache-hours` | `int` | `8` | Galaxy intelligence API cache TTL in hours for EDSM/Spansh queries (backed by SQLite) |
 | `-db` | `string` | `""` | Path to SQLite database file (default: `ed_assist.db` next to binary) |
 | `-status` | `string` | `""` | Direct override for the `Status.json` path |
 | `-config` | `string` | `""` | Path to custom `config.ini` |
@@ -250,6 +251,9 @@ voice_gate_threshold = 40
 
 ; Silence duration in ms before auto-transmitting voice recording (default: 2000ms)
 voice_silence_ms = 2000
+
+; Galaxy intelligence external API cache time in hours (EDSM / Spansh, default: 8 hours)
+system_cache_hours = 8
 ```
 
 ---
@@ -306,8 +310,9 @@ Or specify a dedicated config file:
 }
 ```
 
-### Exposed MCP Tools
+### Exposed MCP Tools (18 Tools)
 
+#### Cockpit Telemetry & History
 | Tool | Description |
 |---|---|
 | `get_status` | Returns the complete status as JSON (ship, cockpit, coordinates, destination, balance, flags). |
@@ -318,8 +323,27 @@ Or specify a dedicated config file:
 | `get_on_foot` | Returns Odyssey on-foot metrics: health, oxygen, temperature, gravity, weapon, and on-foot flags. |
 | `get_visited_systems` | Returns the latest visited star systems history (up to 100) from the SQLite database. |
 | `get_targeted_systems` | Returns the latest targeted star systems/destinations history (up to 100) from the SQLite database. |
+
+#### In-Game Control (DirectInput)
+| Tool | Description |
+|---|---|
 | `send_game_command` | Sends a discrete flight or cockpit command via DirectInput hardware scancodes (`landing_gear`, `hardpoints`, `cargo_scoop`, `lights`, `night_vision`, `boost`, `fsd`, `target`, `pips_sys`, `pips_eng`, `pips_wep`, `pips_reset`, etc.). |
 | `list_game_commands` | Lists all available in-game actions and key bindings mapped from the player's active `.binds` file. |
+
+#### Galaxy Intelligence & Navigation (EDSM & Spansh with SQLite Caching)
+| Tool | Description |
+|---|---|
+| `search_system` | Look up star system coordinates, allegiance, government, economy, security, population, and controlling faction. Defaults to current target destination or current system if omitted. |
+| `nearest_systems` | Find systems nearest to a target system or 3D coordinates `(x, y, z)` within a given radius in light years (optional `only_populated` filter). |
+| `system_stations` | List all stations, starports, planetary outposts, settlement types, distances from arrival star, and services in a system. |
+| `station_market` | Retrieve commodity market prices (buy/sell price, stock, demand) for a specific station, with optional commodity filter. |
+| `system_factions` | Get minor factions in a system, their influence levels, government types, state, and happiness. |
+| `system_bodies` | List celestial bodies (stars, planets, moons) in a system, including terraformability, volcanism, and atmosphere. |
+| `plot_neutron_route` | Calculate a high-speed neutron star highway jump route between two systems using the Spansh router API. |
+| `get_server_status` | Get the current Elite Dangerous game server status and message of the day from Frontier / EDSM. |
+
+> [!TIP]
+> **Galaxy Intelligence Caching**: All external galaxy queries are persistently cached in the SQLite database (`api_cache` table) with a configurable TTL (default: 8 hours, set via `system_cache_hours` in `config.ini` or `-cache-hours` CLI flag). Repeated questions or tool lookups respond in sub-millisecond time without hammering external community APIs.
 
 ### Exposed MCP Resources
 
@@ -381,6 +405,7 @@ Open your browser at `http://127.0.0.1:3000`.
 | `-api-key` | `string` | `""` | Gemini API key (or `GEMINI_API_KEY` env) |
 | `-status` | `string` | `""` | Override path to `Status.json` |
 | `-db` | `string` | `""` | Path to SQLite database file |
+| `-cache-hours` | `int` | `8` | Galaxy intelligence API cache TTL in hours for EDSM/Spansh queries (backed by SQLite) |
 | `-config` | `string` | `""` | Path to custom `config.ini` |
 | `-loglevel` | `string` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `-version` | `bool` | `false` | Print version information and exit |
