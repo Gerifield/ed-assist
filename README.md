@@ -29,6 +29,11 @@ A lightweight, cross-platform Go helper for **Elite Dangerous** that monitors, r
   - Automatically parses player's active `.binds` XML file to resolve key mappings and modifiers.
   - Sends DirectInput hardware scancodes via Windows `SendInput` with configurable hold duration (`key_hold_ms`).
   - Allows AI copilots to toggle landing gear, hardpoints, lights, night vision, boost, FSD, targeting, and power distribution (pips).
+- **Standalone Web Cockpit Assistant (COVAS)**:
+  - Built-in self-hosted web HUD (`ed-assist-web`) with text and voice input.
+  - Automatic VOX noise gate with live audio VU-meter and silence auto-transmission.
+  - Multi-turn AI copilot powered by Google Gemini (`gemini-flash-lite-latest`) with full MCP function calling.
+  - Client-side Markdown rendering (bold, italic, code blocks, lists) and structured server-side INFO logging.
 - **Flexible Configuration**:
   - Configurable via `config.ini` located next to the binary or in the working directory.
   - Automatically determines the default Elite Dangerous path on Windows and Linux if unconfigured.
@@ -91,16 +96,19 @@ Requires **Go 1.24+** (and GNU `make` optionally).
 ### Build with `make`
 
 ```bash
-# Build native binary for host OS (into bin/ed-assist)
+# Build native CLI binary for host OS (into bin/ed-assist)
 make build
 
-# Cross-compile 64-bit Windows binary (bin/ed-assist.exe)
+# Build web cockpit assistant (into bin/ed-assist-web)
+make build-web
+
+# Cross-compile Windows 64-bit binaries (bin/ed-assist.exe & bin/ed-assist-web.exe)
 make windows
 
-# Cross-compile Windows ARM64 binary (bin/ed-assist-arm64.exe)
+# Cross-compile Windows ARM64 binaries
 make windows-arm64
 
-# Build for Linux 64-bit (bin/ed-assist-linux-amd64)
+# Build for Linux 64-bit (bin/ed-assist-linux-amd64 & bin/ed-assist-web-linux-amd64)
 make linux
 
 # Run unit tests
@@ -113,11 +121,15 @@ make clean
 ### Direct Go Build
 
 ```bash
-# Native build
+# CLI binary
 go build -o ed-assist ./cmd/ed-assist
+
+# Web cockpit assistant
+go build -o ed-assist-web ./cmd/ed-assist-web
 
 # Windows cross-compilation
 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ed-assist.exe ./cmd/ed-assist
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ed-assist-web.exe ./cmd/ed-assist-web
 ```
 
 ---
@@ -216,6 +228,28 @@ bindings_path =
 ; Logging
 loglevel = info
 ; logfile = ed-assist.log
+
+; Web Cockpit Assistant & Gemini API Configuration (for ed-assist-web)
+; Web UI listen address and port (default: 127.0.0.1:3000)
+web_addr = 127.0.0.1:3000
+
+; Google Gemini API key (or export GEMINI_API_KEY environment variable)
+gemini_api_key = 
+
+; Gemini model for reasoning (default: gemini-flash-lite-latest)
+gemini_model = gemini-flash-lite-latest
+
+; MCP connection mode: "inprocess" (all-in-one), "http" (SSE), or "stdio"
+gemini_mcp_mode = inprocess
+
+; MCP endpoint URL or binary path when mode is http or stdio
+gemini_mcp_endpoint = http://127.0.0.1:8080/sse
+
+; Automatic VOX Noise Gate threshold (0 - 100, default: 40)
+voice_gate_threshold = 40
+
+; Silence duration in ms before auto-transmitting voice recording (default: 2000ms)
+voice_silence_ms = 2000
 ```
 
 ---
@@ -299,19 +333,102 @@ Or specify a dedicated config file:
 
 ---
 
+## Web Cockpit Assistant (COVAS)
+
+`ed-assist-web` is a standalone web application providing an in-cockpit AI voice & text copilot (**COVAS** = *Cockpit Voice Assistant*) powered by Google Gemini (default: `gemini-flash-lite-latest`) and integrated with the MCP server tools.
+
+### Features
+- **Minimal, responsive dark HUD**: Built with pure HTML5 and vanilla JavaScript (zero frontend dependencies or node build steps).
+- **Rich In-Browser Markdown Parsing**:
+  - Safe, XSS-protected client-side formatter.
+  - Automatically parses `**bold**`, `*italic*`, `` `inline code` ``, ```` ```code blocks``` ````, bullet/numbered lists, and clean paragraph breaks styled to match the orange/cyan cockpit aesthetic.
+- **Manual & Automatic Voice Commands**:
+  - **Manual Push-to-Record (`REC`)**: Click to start recording cockpit voice, click `STOP` to encode and transmit.
+  - **Automatic Noise Gate (`VOX`)**: Real-time voice activity detection with interactive threshold slider (default: 40%) and live input volume visualizer. When speaking above the threshold, recording automatically triggers (slider glows red); when silence is detected for the configured duration (default: 2s, set via `voice_silence_ms`), the audio is automatically transmitted to Gemini, while the VOX listener remains active for the next command.
+- **Scroll-to-Bottom Conversation Stream**: Displays full commander inquiries and COVAS responses in chronological order, automatically scrolling to the latest message.
+- **Structured Server Logging**:
+  - Emits clean, structured `slog` INFO messages on every incoming command and completion:
+    ```text
+    time=... level=INFO msg="received user command" prompt="what time is it?" has_audio=false
+    time=... level=INFO msg="command completed successfully" reply_len=142
+    ```
+- **Gemini Reasoning & Tool State**:
+  - Full multi-turn function calling with cryptographic `thought_signature` preservation across tool execution turns.
+- **Flexible MCP Connectivity**:
+  - `inprocess` (default): All-in-one execution running telemetry reader, SQLite storage, DirectInput game control, and MCP tools directly in the web binary.
+  - `http`: Connects to an external `ed-assist` server serving MCP over HTTP/SSE.
+  - `stdio`: Spawns a local `ed-assist` binary subprocess over stdin/stdout.
+
+### Launching `ed-assist-web`
+```bash
+# Set your Gemini API key (or add gemini_api_key to config.ini)
+export GEMINI_API_KEY="your-gemini-api-key"
+
+# Build and run
+make build-web
+./bin/ed-assist-web
+```
+Open your browser at `http://127.0.0.1:3000`.
+
+### Command Line Flags (`ed-assist-web`)
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `-addr` | `string` | `127.0.0.1:3000` | HTTP listen address and port for the web UI |
+| `-model` | `string` | `gemini-flash-lite-latest` | Gemini model name |
+| `-mcp-mode` | `string` | `inprocess` | MCP transport mode: `inprocess`, `http`, or `stdio` |
+| `-mcp-endpoint` | `string` | `http://127.0.0.1:8080/sse` | MCP endpoint URL (for `http`) or binary path (for `stdio`) |
+| `-api-key` | `string` | `""` | Gemini API key (or `GEMINI_API_KEY` env) |
+| `-status` | `string` | `""` | Override path to `Status.json` |
+| `-db` | `string` | `""` | Path to SQLite database file |
+| `-config` | `string` | `""` | Path to custom `config.ini` |
+| `-loglevel` | `string` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `-version` | `bool` | `false` | Print version information and exit |
+
+---
+
+## Planned Features & Roadmap
+
+### 1. Text-to-Speech (TTS) Voice Output
+- **Full Hands-Free Conversational Loop**:
+  - **Voice In (VOX)** $\to$ **Gemini Reasoning** $\to$ **Spoken Voice Out (COVAS)**.
+  - Automatic acoustic echo prevention: VOX gate temporarily pauses while COVAS is speaking, then automatically re-arms when speech synthesis finishes.
+- **Multi-Engine Synthesis Options**:
+  - **Browser Web Speech API**: Zero-dependency, client-side speech synthesis directly in the browser with customizable pitch, speech rate, and system voice picker (e.g. British English, robotic accents).
+  - **Local Neural TTS (e.g. Piper TTS / Windows SAPI)**: Offline, low-latency neural voice synthesis producing authentic, military-grade cockpit audio.
+  - **Cloud Neural Voice**: High-fidelity conversational audio streams via Gemini Audio / ElevenLabs.
+
+### 2. Proactive Telemetry & Journal Event Triggers
+- **Autonomous In-Cockpit Audio & Text Alerts**:
+  - Monitors `Status.json` flags and Journal entries to proactively alert the commander without requiring a question:
+    - **Combat & Defensive Alerts**: Under attack, shields offline, critical hull integrity drops (<50%, <25%), critical heat levels.
+    - **Interdiction**: Immediate interdiction alert with advice on escape vector or submission.
+    - **Fuel & Route Safety**: Low fuel alarms; fuel scoop alerts; warnings if jumping to an un-scoopable star (KGBFOAM filter check).
+    - **Flight Operations**: Landing gear reminder during station approach or low-altitude planetary flight; docking clearance confirmation.
+    - **Exploration & Navigation**: High-value cartographic discoveries, orbital cruise entry notifications.
+- **Proactive Push Architecture**:
+  - Server-Sent Events (SSE) or WebSocket push channel streaming real-time alerts from the telemetry engine directly into the web HUD.
+
+---
+
 ## Project Structure
 
 ```
 ed-assist/
 ├── cmd/
-│   └── ed-assist/
-│       └── main.go              # Application entrypoint, CLI flags, display output & MCP runner
+│   ├── ed-assist/
+│   │   └── main.go              # Core CLI application & MCP server runner
+│   └── ed-assist-web/
+│       └── main.go              # Standalone web AI cockpit assistant (COVAS)
 ├── internal/
 │   ├── config/
-│   │   ├── config.go            # config.ini parsing and path auto-detection
+│   │   ├── config.go            # config.ini parsing (telemetry, MCP, web, Gemini)
 │   │   └── config_test.go
 │   ├── flags/
 │   │   └── flags.go             # Bitmask constants for Flags, Flags2, and GuiFocus
+│   ├── gemini/
+│   │   ├── client.go            # Gemini API client with audio/text multi-turn & MCP tools
+│   │   └── client_test.go
 │   ├── input/
 │   │   ├── binds.go             # Elite Dangerous .binds XML parser and preset detector
 │   │   ├── binds_test.go
@@ -336,10 +453,17 @@ ed-assist/
 │   ├── tracker/
 │   │   ├── tracker.go           # Journal & Status.json event tracking for systems
 │   │   └── tracker_test.go
-│   └── watcher/
-│       ├── watcher.go           # Cross-platform fsnotify watcher
-│       └── watcher_test.go
-├── Makefile                     # Build & Windows cross-compilation recipes
+│   ├── watcher/
+│   │   ├── watcher.go           # Cross-platform fsnotify watcher
+│   │   └── watcher_test.go
+│   └── web/
+│       ├── mcp_bridge.go        # MCP client bridge (inprocess, http, stdio)
+│       ├── mcp_bridge_test.go
+│       ├── server.go            # Embedded static HTTP file server & /api/chat handler
+│       ├── server_test.go
+│       └── static/
+│           └── index.html       # Responsive dark cockpit HUD with voice recording
+├── Makefile                     # Multi-binary & cross-compilation recipes
 ├── config.ini.example           # Example configuration template
 ├── go.mod
 └── go.sum

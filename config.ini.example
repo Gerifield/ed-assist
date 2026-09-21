@@ -56,3 +56,29 @@ key_hold_ms = 80
 ; Custom path to Elite Dangerous Bindings folder or .binds file
 ; If empty, auto-detects from %LOCALAPPDATA%\Frontier Developments\Elite Dangerous\Options\Bindings
 bindings_path =
+
+; Web Cockpit Assistant & Gemini API Configuration (for ed-assist-web)
+; Web UI listen address and port (default: 127.0.0.1:3000)
+web_addr = 127.0.0.1:3000
+
+; Google Gemini API key (or export GEMINI_API_KEY environment variable)
+gemini_api_key = 
+
+; Gemini model to use for chat & voice reasoning (default: gemini-flash-lite-latest)
+gemini_model = gemini-flash-lite-latest
+
+; MCP connection mode for ed-assist-web:
+; "inprocess" = run MCP server & game watcher directly inside the web binary (all-in-one)
+; "http"      = connect to external ed-assist running MCP over HTTP/SSE (default: http://127.0.0.1:8080/sse)
+; "stdio"     = spawn ed-assist subprocess over stdin/stdout
+gemini_mcp_mode = inprocess
+
+; MCP endpoint URL or binary path when gemini_mcp_mode is http or stdio
+gemini_mcp_endpoint = http://127.0.0.1:8080/sse
+
+; Automatic VOX Noise Gate settings for voice recording:
+; Default trigger volume threshold percentage (0 - 100, default: 40)
+voice_gate_threshold = 40
+
+; Silence duration in milliseconds before auto-transmitting voice recording (default: 2000ms = 2s)
+voice_silence_ms = 2000
