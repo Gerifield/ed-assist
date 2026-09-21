@@ -143,6 +143,11 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var systemPrompt string
+	if s.gemini != nil {
+		systemPrompt = s.gemini.SystemPrompt()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"model":                 s.modelName,
@@ -152,6 +157,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		"voice_gate_threshold":  s.gateThreshold,
 		"voice_silence_ms":      s.silenceMs,
 		"voice_echo_protection": s.echoProtection,
+		"system_prompt":         systemPrompt,
 	})
 }
 

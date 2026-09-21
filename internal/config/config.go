@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"ed-assist/internal/gemini"
 )
 
 // Config holds runtime configuration options for ed-assist.
@@ -37,6 +40,7 @@ type Config struct {
 	GeminiModel       string `json:"gemini_model"`        // default: "gemini-flash-lite-latest"
 	GeminiMCPMode     string `json:"gemini_mcp_mode"`     // "http" or "stdio" (or "inprocess")
 	GeminiMCPEndpoint string `json:"gemini_mcp_endpoint"` // e.g. "http://127.0.0.1:8080/sse" or path to binary for stdio
+	SystemPrompt      string `json:"system_prompt"`       // custom system prompt (empty uses default COVAS prompt)
 
 	// Noise gate / VOX voice recording settings
 	VoiceGateThreshold   int  `json:"voice_gate_threshold"`   // default: 40 (0-100 percent)
@@ -71,6 +75,7 @@ func DefaultConfig() *Config {
 		GeminiModel:    "gemini-flash-lite-latest",
 		GeminiMCPMode:  "http",
 		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
+		SystemPrompt:   gemini.DefaultSystemPrompt,
 		VoiceGateThreshold:   40,
 		VoiceSilenceMs:       2000,
 		VoiceEchoProtection: true,
@@ -275,6 +280,22 @@ func Load(configFileOverride string) (*Config, error) {
 		cfg.GeminiMCPEndpoint = ep
 	}
 
+	if prompt := lookupProp(props, "system_prompt", "gemini_system_prompt", "covas_prompt", "prompt"); prompt != "" {
+		expanded := expandPath(prompt)
+		if data, err := os.ReadFile(expanded); err == nil && len(bytes.TrimSpace(data)) > 0 {
+			cfg.SystemPrompt = strings.TrimSpace(string(data))
+		} else {
+			cfg.SystemPrompt = prompt
+		}
+	} else if promptFile := lookupProp(props, "system_prompt_file", "prompt_file"); promptFile != "" {
+		expanded := expandPath(promptFile)
+		if data, err := os.ReadFile(expanded); err == nil && len(bytes.TrimSpace(data)) > 0 {
+			cfg.SystemPrompt = strings.TrimSpace(string(data))
+		} else {
+			slog.Warn("could not read system_prompt_file", "path", expanded, "error", err)
+		}
+	}
+
 	if threshStr := lookupProp(props, "voice_gate_threshold", "gate_threshold", "noise_gate_threshold", "vox_threshold"); threshStr != "" {
 		if t, err := strconv.Atoi(threshStr); err == nil && t >= 0 && t <= 100 {
 			cfg.VoiceGateThreshold = t
@@ -328,6 +349,7 @@ func lookupProp(props map[string]string, keys ...string) string {
 
 // parseINIFile parses a simple INI file into a key-value map.
 // Section prefixes are stripped or joined, allowing lookup by key directly.
+// Supports multiline values via indented continuation lines.
 func parseINIFile(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -338,34 +360,55 @@ func parseINIFile(path string) (map[string]string, error) {
 	result := make(map[string]string)
 	scanner := bufio.NewScanner(f)
 	currentSection := ""
+	var lastKey string
+	var lastSectionKey string
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if len(line) == 0 || line[0] == ';' || line[0] == '#' {
+		rawLine := scanner.Text()
+		line := strings.TrimSpace(rawLine)
+		if len(line) == 0 {
+			if !strings.HasPrefix(rawLine, " ") && !strings.HasPrefix(rawLine, "\t") {
+				lastKey = ""
+				lastSectionKey = ""
+			}
+			continue
+		}
+		if line[0] == ';' || line[0] == '#' {
 			continue
 		}
 
 		// Check for section [section_name]
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			currentSection = strings.TrimSpace(line[1 : len(line)-1])
+			lastKey = ""
+			lastSectionKey = ""
 			continue
 		}
 
 		// Split on = or :
-		var key, val string
 		if idx := strings.IndexAny(line, "=:"); idx != -1 {
-			key = strings.TrimSpace(line[:idx])
-			val = strings.TrimSpace(line[idx+1:])
+			key := strings.TrimSpace(line[:idx])
+			val := strings.TrimSpace(line[idx+1:])
 			// Strip surrounding quotes if present
 			val = strings.Trim(val, `"'`)
-		} else {
-			continue
-		}
 
-		keyLower := strings.ToLower(key)
-		result[keyLower] = val
-		if currentSection != "" {
-			result[strings.ToLower(currentSection+"."+key)] = val
+			keyLower := strings.ToLower(key)
+			result[keyLower] = val
+			lastKey = keyLower
+			if currentSection != "" {
+				sKey := strings.ToLower(currentSection + "." + key)
+				result[sKey] = val
+				lastSectionKey = sKey
+			} else {
+				lastSectionKey = ""
+			}
+		} else if lastKey != "" && (strings.HasPrefix(rawLine, " ") || strings.HasPrefix(rawLine, "\t")) {
+			// Indented continuation line
+			val := strings.Trim(line, `"'`)
+			result[lastKey] += "\n" + val
+			if lastSectionKey != "" {
+				result[lastSectionKey] += "\n" + val
+			}
 		}
 	}
 

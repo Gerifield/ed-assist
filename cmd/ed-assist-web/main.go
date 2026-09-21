@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -189,6 +190,12 @@ func main() {
 	var optsList []gemini.Option
 	if bridge != nil {
 		optsList = append(optsList, gemini.WithMCPCaller(bridge))
+	}
+	if strings.TrimSpace(cfg.SystemPrompt) != "" {
+		optsList = append(optsList, gemini.WithSystemPrompt(cfg.SystemPrompt))
+	}
+	if cfg.SystemPrompt != "" && cfg.SystemPrompt != gemini.DefaultSystemPrompt {
+		slog.Info("using custom system prompt for COVAS", "chars", len(cfg.SystemPrompt))
 	}
 	geminiClient := gemini.NewClient(cfg.GeminiAPIKey, cfg.GeminiModel, optsList...)
 

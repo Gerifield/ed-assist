@@ -82,10 +82,9 @@ The Elite Dangerous community has built incredible software over the years. Howe
 
 5. **Future-Ready Roadmap**
    - Designed to grow incrementally with planned modular additions:
-     - Automated route planning & neutron highway navigation tools.
+     - Proactive in-cockpit audio & text alarms based on real-time telemetry & Journal events.
      - Real-time commodity trading & market opportunity alerts.
-     - Local Text-To-Speech (TTS) audio copilot output.
-     - Web-based telemetry dashboard / HUD overlay.
+     - Optional offline neural TTS copilot output (e.g. Piper TTS / Windows SAPI).
 
 ---
 
@@ -239,6 +238,11 @@ gemini_api_key =
 
 ; Gemini model for reasoning (default: gemini-flash-lite-latest)
 gemini_model = gemini-flash-lite-latest
+
+; Custom system instruction prompt for COVAS / Gemini assistant.
+; If omitted or empty, ed-assist uses the default Elite Dangerous COVAS cockpit prompt.
+; Accepts prompt text directly (single line or indented multi-line) or path to a text file (e.g. prompt.txt)
+system_prompt = 
 
 ; MCP connection mode: "inprocess" (all-in-one), "http" (SSE), or "stdio"
 gemini_mcp_mode = inprocess
@@ -424,16 +428,7 @@ Open your browser at `http://127.0.0.1:3000`.
 
 ## Planned Features & Roadmap
 
-### 1. Text-to-Speech (TTS) Voice Output
-- **Full Hands-Free Conversational Loop**:
-  - **Voice In (VOX)** $\to$ **Gemini Reasoning** $\to$ **Spoken Voice Out (COVAS)**.
-  - Automatic acoustic echo prevention: VOX gate temporarily pauses while COVAS is speaking, then automatically re-arms when speech synthesis finishes.
-- **Multi-Engine Synthesis Options**:
-  - **Browser Web Speech API (Implemented)**: Zero-dependency, client-side speech synthesis directly in the browser with language presets (English, Magyar, Deutsch, Français, Español), acoustic echo suppression, and persistent voice picker.
-  - **Local Neural TTS (e.g. Piper TTS / Windows SAPI)**: Offline, low-latency neural voice synthesis producing authentic, military-grade cockpit audio.
-  - **Cloud Neural Voice**: High-fidelity conversational audio streams via Gemini Audio / ElevenLabs.
-
-### 2. Proactive Telemetry & Journal Event Triggers
+### Proactive Telemetry & Journal Event Triggers
 - **Autonomous In-Cockpit Audio & Text Alerts**:
   - Monitors `Status.json` flags and Journal entries to proactively alert the commander without requiring a question:
     - **Combat & Defensive Alerts**: Under attack, shields offline, critical hull integrity drops (<50%, <25%), critical heat levels.
@@ -443,6 +438,24 @@ Open your browser at `http://127.0.0.1:3000`.
     - **Exploration & Navigation**: High-value cartographic discoveries, orbital cruise entry notifications.
 - **Proactive Push Architecture**:
   - Server-Sent Events (SSE) or WebSocket push channel streaming real-time alerts from the telemetry engine directly into the web HUD.
+
+---
+
+## Gallery
+
+### Web Cockpit Assistant HUD (`ed-assist-web`)
+
+| Web Cockpit Assistant UI | Galaxy Intelligence & System Telemetry |
+|:---:|:---:|
+| ![Browser Cockpit Assistant UI](docs/screenshots/ed_assistan_ui.png) | ![System Information Assistant](docs/screenshots/ed_information_assistant.png) |
+| *Voice-enabled cockpit HUD with live audio VU-meter, Read Aloud TTS, and conversation log* | *In-depth galaxy intelligence, celestial body, and system query responses* |
+
+### Model Context Protocol (MCP) in External LLM Clients
+
+| MCP Server Integration (e.g. Cherry Studio / Claude Desktop) |
+|:---:|
+| ![MCP in Cherry Studio](docs/screenshots/ed_ai_mcp_test.png) |
+| *`ed-assist` MCP server connected live and executing tools inside Cherry Studio* |
 
 ---
 
@@ -498,6 +511,8 @@ ed-assist/
 │       ├── server_test.go
 │       └── static/
 │           └── index.html       # Responsive dark cockpit HUD with voice recording
+├── docs/
+│   └── screenshots/             # Cockpit HUD screenshots and media assets
 ├── Makefile                     # Multi-binary & cross-compilation recipes
 ├── config.ini.example           # Example configuration template
 ├── go.mod
