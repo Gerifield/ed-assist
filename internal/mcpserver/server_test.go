@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -433,3 +434,80 @@ func TestMCPServerExternalAPITools(t *testing.T) {
 		t.Fatalf("get_server_status failed: %v, res: %v", err, res)
 	}
 }
+
+func TestResolveSystemNameNilDestination(t *testing.T) {
+	// Status without a targeted destination (Destination is nil)
+	st := makeSampleStatus()
+	st.Destination = nil
+	mock := &mockProvider{status: st}
+
+	s := New(mock, nil, nil)
+	// Must not panic when Destination is nil
+	resolved := s.resolveSystemName("")
+	if resolved != "" {
+		t.Errorf("expected empty string when no destination and no store, got %q", resolved)
+	}
+
+	// Tool call search_system without system_name should cleanly return an error result, not panic
+	ctx := context.Background()
+	res, err := s.server.GetTool("search_system").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "search_system"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Errorf("expected tool result error when system cannot be resolved")
+	}
+
+	// 2. Test fallback to visited system from store
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	dbStore, err := store.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed initializing test store: %v", err)
+	}
+	defer dbStore.Close()
+
+	_ = dbStore.RecordVisited(store.VisitedSystem{
+		SystemName:    "Alpha Centauri",
+		SystemAddress: 11112222,
+		VisitedAt:     time.Now().UTC(),
+	})
+
+	sWithStore := New(mock, dbStore, nil)
+	resolvedVisited := sWithStore.resolveSystemName("")
+	if resolvedVisited != "Alpha Centauri" {
+		t.Errorf("expected Alpha Centauri from visited history, got %q", resolvedVisited)
+	}
+
+	// 3. Test fallback to journal file
+	journalDir := t.TempDir()
+	journalFile := filepath.Join(journalDir, "Journal.2026-09-22T000000.01.log")
+	journalContent := `{"timestamp":"2026-09-22T00:10:00Z","event":"Location","StarSystem":"Shinrarta Dezhra"}
+`
+	if err := os.WriteFile(journalFile, []byte(journalContent), 0644); err != nil {
+		t.Fatalf("failed writing test journal: %v", err)
+	}
+
+	statusMock := &mockFilePathProvider{
+		mockProvider: mockProvider{status: st},
+		filePath:     filepath.Join(journalDir, "Status.json"),
+	}
+	sWithJournal := New(statusMock, nil, nil)
+	resolvedJournal := sWithJournal.resolveSystemName("")
+	if resolvedJournal != "Shinrarta Dezhra" {
+		t.Errorf("expected Shinrarta Dezhra from journal fallback, got %q", resolvedJournal)
+	}
+}
+
+type mockFilePathProvider struct {
+	mockProvider
+	filePath string
+}
+
+func (m *mockFilePathProvider) FilePath() string {
+	return m.filePath
+}
+
+

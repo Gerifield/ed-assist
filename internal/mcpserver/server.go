@@ -1,12 +1,16 @@
 package mcpserver
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -551,17 +555,96 @@ func (s *MCPServer) resolveSystemName(specified string) string {
 	if specified = strings.TrimSpace(specified); specified != "" {
 		return specified
 	}
+	// 1. Active targeted destination from live status
 	if st, err := s.getStatus(); err == nil && st != nil {
-		if st.Destination.Name != "" {
+		if st.Destination != nil && st.Destination.Name != "" {
 			return st.Destination.Name
 		}
 	}
+	// 2. History: most recent visited star system (current location in galaxy)
 	if s.store != nil {
-		if visited, err := s.store.GetVisited(1); err == nil && len(visited) > 0 {
+		if visited, err := s.store.GetVisited(1); err == nil && len(visited) > 0 && visited[0].SystemName != "" {
 			return visited[0].SystemName
+		}
+		// Fallback to most recent targeted destination in history
+		if targeted, err := s.store.GetTargeted(1); err == nil && len(targeted) > 0 && targeted[0].SystemName != "" {
+			return targeted[0].SystemName
+		}
+	}
+	// 3. Fallback: inspect latest Journal log in the status/journal directory
+	if fallbackSys := s.findLatestSystemFromJournals(); fallbackSys != "" {
+		return fallbackSys
+	}
+	return ""
+}
+
+func (s *MCPServer) findLatestSystemFromJournals() string {
+	var journalDir string
+	if fp, ok := s.provider.(interface{ FilePath() string }); ok && fp.FilePath() != "" {
+		journalDir = filepath.Dir(fp.FilePath())
+	}
+	if journalDir == "" {
+		if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
+			journalDir = filepath.Join(userHome, "Saved Games", "Frontier Developments", "Elite Dangerous")
+		}
+	}
+	if journalDir == "" {
+		return ""
+	}
+
+	files, err := filepath.Glob(filepath.Join(journalDir, "Journal.*.log"))
+	if err != nil || len(files) == 0 {
+		return ""
+	}
+
+	sort.Strings(files)
+	for i := len(files) - 1; i >= 0 && i >= len(files)-3; i-- {
+		if sys := extractLatestSystemFromJournal(files[i]); sys != "" {
+			return sys
 		}
 	}
 	return ""
+}
+
+func extractLatestSystemFromJournal(filePath string) string {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	var latestSystem string
+	var latestTarget string
+
+	type miniEvent struct {
+		Event      string `json:"event"`
+		StarSystem string `json:"StarSystem,omitempty"`
+		Name       string `json:"Name,omitempty"`
+	}
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) == 0 {
+			continue
+		}
+		var ev miniEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		if ev.Event == "Location" || ev.Event == "FSDJump" || ev.Event == "CarrierJump" {
+			if ev.StarSystem != "" {
+				latestSystem = ev.StarSystem
+			}
+		} else if ev.Event == "FSDTarget" && ev.Name != "" {
+			latestTarget = ev.Name
+		}
+	}
+
+	if latestTarget != "" {
+		return latestTarget
+	}
+	return latestSystem
 }
 
 func (s *MCPServer) registerResources() {
