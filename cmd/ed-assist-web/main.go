@@ -141,13 +141,13 @@ func main() {
 
 	default: // "inprocess" - self-contained mode!
 		slog.Info("running in-process MCP server and telemetry engine")
-		if cfg.EnableTracking {
-			st, err := store.New(cfg.DBPath)
-			if err != nil {
-				slog.Error("failed initializing SQLite store", "error", err)
-			} else {
-				sqliteStore = st
-				defer sqliteStore.Close()
+		st, err := store.New(cfg.DBPath)
+		if err != nil {
+			slog.Warn("could not initialize SQLite store, continuing in-memory", "error", err)
+		} else {
+			sqliteStore = st
+			defer sqliteStore.Close()
+			if cfg.EnableTracking {
 				sysTracker = tracker.New(sqliteStore, cfg.StatusFilePath)
 				go sysTracker.Start(ctx)
 			}
@@ -193,7 +193,15 @@ func main() {
 	geminiClient := gemini.NewClient(cfg.GeminiAPIKey, cfg.GeminiModel, optsList...)
 
 	// Create and start web server
-	webServer := web.NewServer(cfg.WebAddr, geminiClient, bridge, cfg.GeminiModel, cfg.VoiceGateThreshold, cfg.VoiceSilenceMs)
+	webServer := web.NewServer(
+		cfg.WebAddr,
+		geminiClient,
+		bridge,
+		cfg.GeminiModel,
+		cfg.VoiceGateThreshold,
+		cfg.VoiceSilenceMs,
+		web.WithEchoProtection(cfg.VoiceEchoProtection),
+	)
 	if err := webServer.Start(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("web server error", "error", err)
 		os.Exit(1)

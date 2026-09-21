@@ -108,6 +108,14 @@ func (r *Reader) LastStatus() *parser.Status {
 	return r.lastStatus
 }
 
+// FilePath returns the path to the status file being read.
+func (r *Reader) FilePath() string {
+	if r == nil {
+		return ""
+	}
+	return r.filePath
+}
+
 // ReadOnce attempts to read and parse the status file once, performing quick retries on failure.
 func (r *Reader) ReadOnce() (*parser.Status, error) {
 	var lastErr error

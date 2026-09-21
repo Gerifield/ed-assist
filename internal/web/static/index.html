@@ -300,6 +300,110 @@
       100% { box-shadow: 0 0 4px #ff3333; }
     }
 
+    /* TTS Read Aloud button styles */
+    #tts-btn.tts-active {
+      background: rgba(0, 229, 255, 0.2);
+      border-color: var(--text-user);
+      color: var(--text-user);
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+    }
+
+    #tts-btn.speaking {
+      background: rgba(255, 170, 0, 0.25);
+      border-color: #ffaa00;
+      color: #ffdd44;
+      box-shadow: 0 0 12px rgba(255, 170, 0, 0.6);
+      animation: pulse-tts 1s infinite;
+    }
+
+    @keyframes pulse-tts {
+      0% { box-shadow: 0 0 4px #ffaa00; }
+      50% { box-shadow: 0 0 14px #ffaa00; }
+      100% { box-shadow: 0 0 4px #ffaa00; }
+    }
+
+    /* TTS Controls row */
+    .tts-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-top: 6px;
+      border-top: 1px dashed rgba(255, 119, 0, 0.15);
+      font-size: 0.8rem;
+    }
+
+    .tts-label {
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 140px;
+    }
+
+    .tts-label strong {
+      color: var(--text-bright);
+    }
+
+    .tts-active-text {
+      color: #00e5ff !important;
+    }
+
+    .tts-muted-text {
+      color: #667280 !important;
+    }
+
+    .hud-select {
+      flex: 1;
+      background: #181d24;
+      border: 1px solid #3d4653;
+      color: #ffaa44;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .hud-select:focus {
+      border-color: var(--border-color);
+      box-shadow: 0 0 6px rgba(255, 119, 0, 0.3);
+    }
+
+    .hud-select optgroup {
+      background: #0f131a;
+      color: var(--text-dim);
+      font-weight: bold;
+    }
+
+    .hud-select option {
+      background: #141820;
+      color: #e0e6ed;
+    }
+
+    .tts-action-btn {
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      border-radius: 3px;
+      background: rgba(255, 119, 0, 0.12);
+      border-color: var(--border-dim);
+      color: var(--text-bright);
+    }
+
+    .tts-action-btn:hover {
+      background: rgba(255, 119, 0, 0.3);
+      border-color: var(--border-color);
+    }
+
+    .tts-stop-btn {
+      background: rgba(255, 0, 0, 0.2) !important;
+      border-color: #ff4444 !important;
+      color: #ff8888 !important;
+    }
+
     /* Noise Gate / VOX controls row */
     .vox-row {
       display: flex;
@@ -468,6 +572,10 @@
           <span id="vox-icon">🎙️</span>
           <span id="vox-label">VOX</span>
         </button>
+        <button id="tts-btn" title="Toggle Read Aloud voice output (Browser Web Speech API)">
+          <span id="tts-icon">🔊</span>
+          <span id="tts-label">TTS</span>
+        </button>
       </div>
 
       <!-- VOX Noise Gate slider and input volume meter row -->
@@ -484,6 +592,21 @@
         </div>
 
         <div class="vox-status-tag" id="vox-tag">VOX OFF</div>
+      </div>
+
+      <!-- TTS Read Aloud and Voice Presets row -->
+      <div class="tts-row">
+        <div class="tts-label">
+          <span>READ ALOUD:</span>
+          <strong id="tts-status-text">OFF</strong>
+        </div>
+
+        <select id="tts-voice-select" class="hud-select" title="Select voice preset by language and browser support">
+          <option value="">Loading browser voices...</option>
+        </select>
+
+        <button id="tts-test-btn" class="tts-action-btn" title="Test speech synthesis with selected voice">TEST</button>
+        <button id="tts-stop-btn" class="tts-action-btn tts-stop-btn" title="Stop ongoing speech" style="display: none;">STOP</button>
       </div>
     </div>
 
@@ -507,6 +630,13 @@
     const voxMeter = document.getElementById('vox-meter');
     const voxMarker = document.getElementById('vox-marker');
     const voxTag = document.getElementById('vox-tag');
+    const ttsBtn = document.getElementById('tts-btn');
+    const ttsLabel = document.getElementById('tts-label');
+    const ttsIcon = document.getElementById('tts-icon');
+    const ttsVoiceSelect = document.getElementById('tts-voice-select');
+    const ttsStatusText = document.getElementById('tts-status-text');
+    const ttsTestBtn = document.getElementById('tts-test-btn');
+    const ttsStopBtn = document.getElementById('tts-stop-btn');
     const footerStatus = document.getElementById('footer-status');
     const modelBadge = document.getElementById('model-badge');
     const mcpBadge = document.getElementById('mcp-badge');
@@ -516,6 +646,12 @@
     let manualRecorder = null;
     let manualChunks = [];
     let manualStream = null;
+
+    // TTS Read Aloud state
+    let ttsActive = localStorage.getItem('covas_tts_enabled') === 'true';
+    let availableVoices = [];
+    let isCovasSpeaking = false;
+    let echoProtection = true; // Configurable from config.ini (voice_echo_protection)
 
     // VOX Noise Gate state
     let voxActive = false;
@@ -543,6 +679,9 @@
         }
         if (info.voice_silence_ms !== undefined && info.voice_silence_ms > 0) {
           silenceTimeoutMs = info.voice_silence_ms;
+        }
+        if (info.voice_echo_protection !== undefined) {
+          echoProtection = Boolean(info.voice_echo_protection);
         }
       })
       .catch(() => {});
@@ -667,6 +806,9 @@
         if (res.ok && data.reply) {
           appendMessage('COVAS // Reply', data.reply, false);
           footerStatus.textContent = voxActive ? 'VOX Listening...' : 'Ready';
+          if (ttsActive) {
+            speakText(data.reply);
+          }
         } else {
           appendMessage('SYS // Error', data.error || 'Failed to get response', false);
           footerStatus.textContent = 'Error: ' + (data.error || 'Unknown');
@@ -848,6 +990,13 @@
     function monitorVoxAudio() {
       if (!voxActive || !voxAnalyser) return;
 
+      if (echoProtection && isCovasSpeaking) {
+        // Prevent VOX from self-triggering while COVAS is speaking aloud (if voice_echo_protection is enabled)
+        voxMeter.style.width = '0%';
+        voxAnimFrame = requestAnimationFrame(monitorVoxAudio);
+        return;
+      }
+
       const dataArray = new Uint8Array(voxAnalyser.frequencyBinCount);
       voxAnalyser.getByteTimeDomainData(dataArray);
 
@@ -948,6 +1097,239 @@
         }
       }, 1000);
     }
+
+    // ---------------------------------------------------------------------------
+    // 3. Browser Web Speech API Read Aloud (TTS) Functionality
+    // ---------------------------------------------------------------------------
+
+    function populateVoiceList() {
+      if (!('speechSynthesis' in window)) {
+        ttsVoiceSelect.innerHTML = '<option value="">Speech Synthesis Not Supported</option>';
+        ttsVoiceSelect.disabled = true;
+        ttsBtn.disabled = true;
+        ttsTestBtn.disabled = true;
+        ttsStatusText.textContent = 'UNSUPPORTED';
+        return;
+      }
+
+      availableVoices = window.speechSynthesis.getVoices();
+      if (!availableVoices || availableVoices.length === 0) {
+        return;
+      }
+
+      // Group voices by primary languages
+      const groups = {
+        'English (UK / US / Int)': [],
+        'Magyar (Hungarian)': [],
+        'Deutsch (German)': [],
+        'Français (French)': [],
+        'Español (Spanish)': [],
+        'Other Supported Voices': []
+      };
+
+      availableVoices.forEach(voice => {
+        const lang = (voice.lang || '').toLowerCase();
+        if (lang.startsWith('en')) {
+          groups['English (UK / US / Int)'].push(voice);
+        } else if (lang.startsWith('hu')) {
+          groups['Magyar (Hungarian)'].push(voice);
+        } else if (lang.startsWith('de')) {
+          groups['Deutsch (German)'].push(voice);
+        } else if (lang.startsWith('fr')) {
+          groups['Français (French)'].push(voice);
+        } else if (lang.startsWith('es')) {
+          groups['Español (Spanish)'].push(voice);
+        } else {
+          groups['Other Supported Voices'].push(voice);
+        }
+      });
+
+      const savedVoiceURI = localStorage.getItem('covas_tts_voice') || '';
+      ttsVoiceSelect.innerHTML = '';
+
+      let foundSaved = false;
+      let defaultVoice = null;
+
+      // Authentic British or clear English voice preferred for COVAS by default
+      const preferredBritish = availableVoices.filter(v => 
+        v.lang === 'en-GB' || (v.name && (v.name.includes('UK') || v.name.includes('George') || v.name.includes('Hazel') || v.name.includes('Oliver')))
+      );
+      if (preferredBritish.length > 0) {
+        defaultVoice = preferredBritish[0];
+      } else {
+        defaultVoice = availableVoices.find(v => (v.lang || '').startsWith('en')) ||
+                       availableVoices.find(v => v.default) ||
+                       availableVoices[0];
+      }
+
+      for (const [groupName, vList] of Object.entries(groups)) {
+        if (vList.length === 0) continue;
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = groupName;
+
+        vList.forEach(voice => {
+          const option = document.createElement('option');
+          option.value = voice.voiceURI || voice.name;
+          option.textContent = `${voice.name} [${voice.lang}]${voice.default ? ' — System' : ''}`;
+          if (savedVoiceURI && (voice.voiceURI === savedVoiceURI || voice.name === savedVoiceURI)) {
+            option.selected = true;
+            foundSaved = true;
+          }
+          optgroup.appendChild(option);
+        });
+
+        ttsVoiceSelect.appendChild(optgroup);
+      }
+
+      // If saved voice was not found, select default English/system voice
+      if (!foundSaved && defaultVoice) {
+        ttsVoiceSelect.value = defaultVoice.voiceURI || defaultVoice.name;
+        localStorage.setItem('covas_tts_voice', ttsVoiceSelect.value);
+      }
+    }
+
+    // Populate voices on startup and when browser loads voices asynchronously
+    populateVoiceList();
+    if (typeof window.speechSynthesis !== 'undefined' && window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = populateVoiceList;
+    }
+
+    ttsVoiceSelect.addEventListener('change', () => {
+      localStorage.setItem('covas_tts_voice', ttsVoiceSelect.value);
+    });
+
+    function updateTTSUI() {
+      if (ttsActive) {
+        ttsBtn.classList.add('tts-active');
+        ttsLabel.textContent = 'TTS';
+        ttsIcon.textContent = '🔊';
+        ttsStatusText.textContent = 'ACTIVE';
+        ttsStatusText.className = 'tts-active-text';
+      } else {
+        ttsBtn.classList.remove('tts-active', 'speaking');
+        ttsLabel.textContent = 'TTS';
+        ttsIcon.textContent = '🔇';
+        ttsStatusText.textContent = 'MUTED';
+        ttsStatusText.className = 'tts-muted-text';
+        ttsStopBtn.style.display = 'none';
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+        isCovasSpeaking = false;
+      }
+    }
+
+    ttsBtn.addEventListener('click', () => {
+      ttsActive = !ttsActive;
+      localStorage.setItem('covas_tts_enabled', ttsActive ? 'true' : 'false');
+      updateTTSUI();
+      footerStatus.textContent = ttsActive ? 'Read Aloud (TTS) enabled.' : 'Read Aloud (TTS) muted.';
+    });
+
+    function cleanMarkdownForSpeech(text) {
+      if (!text) return '';
+      return text
+        // Replace fenced code blocks
+        .replace(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g, 'Code snippet omitted.')
+        // Replace inline code
+        .replace(/`([^`]+)`/g, '$1')
+        // Remove markdown headers
+        .replace(/^#{1,6}\s+(.*)$/gm, '$1. ')
+        // Remove bold and italic markers
+        .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+        .replace(/_{1,3}([^_]+)_{1,3}/g, '$1')
+        // Replace markdown links [label](url) with just label
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        // Remove list bullets (*, -, +, •)
+        .replace(/^[\*\-\+•]\s+/gm, '')
+        // Clean numbered lists
+        .replace(/^\d+\.\s+/gm, '')
+        // Remove horizontal lines
+        .replace(/^[-*]{3,}$/gm, '')
+        // Replace newlines with periods or commas for natural cadence
+        .replace(/\n\n+/g, '. ')
+        .replace(/\n/g, ', ')
+        // Replace consecutive punctuation/spaces
+        .replace(/\s+/g, ' ')
+        .replace(/([.,?!])\s*([.,?!])/g, '$1')
+        .trim();
+    }
+
+    function speakText(rawText) {
+      if (!('speechSynthesis' in window)) return;
+      if (!ttsActive) return;
+
+      const speechText = cleanMarkdownForSpeech(rawText);
+      if (!speechText) return;
+
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(speechText);
+
+      // Find matching voice
+      const selectedURI = ttsVoiceSelect.value;
+      if (selectedURI && availableVoices.length > 0) {
+        const found = availableVoices.find(v => v.voiceURI === selectedURI || v.name === selectedURI);
+        if (found) {
+          utterance.voice = found;
+          if (found.lang) {
+            utterance.lang = found.lang;
+          }
+        }
+      }
+
+      utterance.onstart = () => {
+        isCovasSpeaking = true;
+        ttsBtn.classList.add('speaking');
+        ttsStopBtn.style.display = 'inline-flex';
+        footerStatus.textContent = 'COVAS reading aloud...';
+      };
+
+      utterance.onend = () => {
+        isCovasSpeaking = false;
+        ttsBtn.classList.remove('speaking');
+        ttsStopBtn.style.display = 'none';
+        footerStatus.textContent = voxActive ? 'VOX Listening...' : 'Ready';
+      };
+
+      utterance.onerror = (e) => {
+        isCovasSpeaking = false;
+        ttsBtn.classList.remove('speaking');
+        ttsStopBtn.style.display = 'none';
+        if (e.error !== 'canceled') {
+          console.warn('Speech synthesis error:', e);
+        }
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+
+    ttsTestBtn.addEventListener('click', () => {
+      if (!ttsActive) {
+        ttsActive = true;
+        localStorage.setItem('covas_tts_enabled', 'true');
+        updateTTSUI();
+      }
+      const selectedVoice = availableVoices.find(v => (v.voiceURI || v.name) === ttsVoiceSelect.value);
+      const isHu = selectedVoice && selectedVoice.lang && selectedVoice.lang.toLowerCase().startsWith('hu');
+      const testMsg = isHu
+        ? 'Üdvözlöm Parancsnok. A hajó fedélzeti rendszerei működőképesek. A beszédszintézis aktív.'
+        : 'Greetings Commander. Flight systems operational. Speech synthesis online.';
+      speakText(testMsg);
+    });
+
+    ttsStopBtn.addEventListener('click', () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      isCovasSpeaking = false;
+      ttsBtn.classList.remove('speaking');
+      ttsStopBtn.style.display = 'none';
+      footerStatus.textContent = 'Speech stopped';
+    });
+
+    // Initialize TTS UI state on load
+    updateTTSUI();
   </script>
 </body>
 </html>

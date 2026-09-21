@@ -83,6 +83,11 @@ voice_gate_threshold = 40
 ; Silence duration in milliseconds before auto-transmitting voice recording (default: 2000ms = 2s)
 voice_silence_ms = 2000
 
+; Acoustic echo protection: automatically suppress VOX microphone trigger while COVAS
+; reads aloud through speakers to prevent microphone loopback (true / false, default: true)
+voice_echo_protection = true
+
+
 ; Galaxy intelligence external API cache time in hours (EDSM / Spansh)
 ; Cached persistently in SQLite api_cache table (default: 8 hours)
 system_cache_hours = 8
