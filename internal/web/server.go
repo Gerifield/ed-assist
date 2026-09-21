@@ -19,19 +19,30 @@ var staticFS embed.FS
 
 // Server hosts the web client UI and JSON API endpoints.
 type Server struct {
-	addr          string
-	gemini        *gemini.Client
-	bridge        *MCPBridge
-	modelName     string
-	gateThreshold int
-	silenceMs     int
-	historyMu     sync.Mutex
-	history       []gemini.ChatMessage
-	httpServer    *http.Server
+	addr           string
+	gemini         *gemini.Client
+	bridge         *MCPBridge
+	modelName      string
+	gateThreshold  int
+	silenceMs      int
+	echoProtection bool
+	historyMu      sync.Mutex
+	history        []gemini.ChatMessage
+	httpServer     *http.Server
+}
+
+// ServerOption configures optional web server settings.
+type ServerOption func(*Server)
+
+// WithEchoProtection configures whether VOX listening is paused while COVAS speaks aloud.
+func WithEchoProtection(enabled bool) ServerOption {
+	return func(s *Server) {
+		s.echoProtection = enabled
+	}
 }
 
 // NewServer creates a new web assistant server.
-func NewServer(addr string, geminiClient *gemini.Client, bridge *MCPBridge, modelName string, gateThreshold, silenceMs int) *Server {
+func NewServer(addr string, geminiClient *gemini.Client, bridge *MCPBridge, modelName string, gateThreshold, silenceMs int, opts ...ServerOption) *Server {
 	if addr == "" {
 		addr = "127.0.0.1:3000"
 	}
@@ -44,14 +55,19 @@ func NewServer(addr string, geminiClient *gemini.Client, bridge *MCPBridge, mode
 	if silenceMs <= 0 {
 		silenceMs = 2000
 	}
-	return &Server{
-		addr:          addr,
-		gemini:        geminiClient,
-		bridge:        bridge,
-		modelName:     modelName,
-		gateThreshold: gateThreshold,
-		silenceMs:     silenceMs,
+	srv := &Server{
+		addr:           addr,
+		gemini:         geminiClient,
+		bridge:         bridge,
+		modelName:      modelName,
+		gateThreshold:  gateThreshold,
+		silenceMs:      silenceMs,
+		echoProtection: true, // Default to true
 	}
+	for _, opt := range opts {
+		opt(srv)
+	}
+	return srv
 }
 
 // Start launches the HTTP server for the web interface and API.
@@ -129,12 +145,13 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"model":                s.modelName,
-		"mcp_mode":             mode,
-		"tool_count":           toolCount,
-		"status":               "online",
-		"voice_gate_threshold": s.gateThreshold,
-		"voice_silence_ms":     s.silenceMs,
+		"model":                 s.modelName,
+		"mcp_mode":              mode,
+		"tool_count":            toolCount,
+		"status":                "online",
+		"voice_gate_threshold":  s.gateThreshold,
+		"voice_silence_ms":      s.silenceMs,
+		"voice_echo_protection": s.echoProtection,
 	})
 }
 

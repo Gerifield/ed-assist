@@ -252,6 +252,9 @@ voice_gate_threshold = 40
 ; Silence duration in ms before auto-transmitting voice recording (default: 2000ms)
 voice_silence_ms = 2000
 
+; Acoustic echo protection: automatically suppress VOX trigger while COVAS speaks (default: true)
+voice_echo_protection = true
+
 ; Galaxy intelligence external API cache time in hours (EDSM / Spansh, default: 8 hours)
 system_cache_hours = 8
 ```
@@ -369,6 +372,13 @@ Or specify a dedicated config file:
 - **Manual & Automatic Voice Commands**:
   - **Manual Push-to-Record (`REC`)**: Click to start recording cockpit voice, click `STOP` to encode and transmit.
   - **Automatic Noise Gate (`VOX`)**: Real-time voice activity detection with interactive threshold slider (default: 40%) and live input volume visualizer. When speaking above the threshold, recording automatically triggers (slider glows red); when silence is detected for the configured duration (default: 2s, set via `voice_silence_ms`), the audio is automatically transmitted to Gemini, while the VOX listener remains active for the next command.
+- **Read Aloud Voice Output (Browser Web Speech API)**:
+  - Hands-free audio responses spoken directly by the browser using the Web Speech API (zero external dependencies).
+  - Interactive **TTS toggle button** (`🔊 TTS`) to activate or deactivate voice synthesis (saved in `localStorage`).
+  - **Voice Preset Dropdown**: Organizes voices supported by the browser into primary language groups (English with authentic UK/US/Int choices, Magyar, Deutsch, Français, Español, and other system voices).
+  - **Clean Speech Markdown Parsing**: Automatically strips formatting syntax (`**bold**`, `*italic*`, code blocks, backticks, list bullets, etc.) so speech sounds clean and natural.
+  - **Acoustic Echo & Feedback Prevention**: The VOX noise gate automatically pauses while COVAS is speaking, eliminating microphone loopback through speakers.
+  - **Voice Test & Stop Controls**: Includes a `TEST` button to preview any selected voice and a `STOP` button to cancel speech on demand.
 - **Scroll-to-Bottom Conversation Stream**: Displays full commander inquiries and COVAS responses in chronological order, automatically scrolling to the latest message.
 - **Structured Server Logging**:
   - Emits clean, structured `slog` INFO messages on every incoming command and completion:
@@ -419,7 +429,7 @@ Open your browser at `http://127.0.0.1:3000`.
   - **Voice In (VOX)** $\to$ **Gemini Reasoning** $\to$ **Spoken Voice Out (COVAS)**.
   - Automatic acoustic echo prevention: VOX gate temporarily pauses while COVAS is speaking, then automatically re-arms when speech synthesis finishes.
 - **Multi-Engine Synthesis Options**:
-  - **Browser Web Speech API**: Zero-dependency, client-side speech synthesis directly in the browser with customizable pitch, speech rate, and system voice picker (e.g. British English, robotic accents).
+  - **Browser Web Speech API (Implemented)**: Zero-dependency, client-side speech synthesis directly in the browser with language presets (English, Magyar, Deutsch, Français, Español), acoustic echo suppression, and persistent voice picker.
   - **Local Neural TTS (e.g. Piper TTS / Windows SAPI)**: Offline, low-latency neural voice synthesis producing authentic, military-grade cockpit audio.
   - **Cloud Neural Voice**: High-fidelity conversational audio streams via Gemini Audio / ElevenLabs.
 

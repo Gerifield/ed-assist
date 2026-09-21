@@ -39,8 +39,9 @@ type Config struct {
 	GeminiMCPEndpoint string `json:"gemini_mcp_endpoint"` // e.g. "http://127.0.0.1:8080/sse" or path to binary for stdio
 
 	// Noise gate / VOX voice recording settings
-	VoiceGateThreshold int `json:"voice_gate_threshold"` // default: 40 (0-100 percent)
-	VoiceSilenceMs     int `json:"voice_silence_ms"`     // default: 2000 (ms)
+	VoiceGateThreshold   int  `json:"voice_gate_threshold"`   // default: 40 (0-100 percent)
+	VoiceSilenceMs       int  `json:"voice_silence_ms"`       // default: 2000 (ms)
+	VoiceEchoProtection bool `json:"voice_echo_protection"` // default: true (suppress VOX trigger while COVAS speaks aloud)
 
 	// External API & System info cache settings
 	SystemCacheHours int           `json:"system_cache_hours"` // default: 8 (hours)
@@ -70,8 +71,9 @@ func DefaultConfig() *Config {
 		GeminiModel:    "gemini-flash-lite-latest",
 		GeminiMCPMode:  "http",
 		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
-		VoiceGateThreshold: 40,
-		VoiceSilenceMs:     2000,
+		VoiceGateThreshold:   40,
+		VoiceSilenceMs:       2000,
+		VoiceEchoProtection: true,
 		SystemCacheHours:   8,
 		SystemCacheTTL:     8 * time.Hour,
 	}
@@ -285,6 +287,11 @@ func Load(configFileOverride string) (*Config, error) {
 		} else if d, err := time.ParseDuration(silenceStr); err == nil && d > 0 {
 			cfg.VoiceSilenceMs = int(d / time.Millisecond)
 		}
+	}
+
+	if echoStr := lookupProp(props, "voice_echo_protection", "echo_protection", "tts_echo_protection", "vox_echo_protection"); echoStr != "" {
+		echoLower := strings.ToLower(echoStr)
+		cfg.VoiceEchoProtection = echoLower == "true" || echoLower == "1" || echoLower == "yes" || echoLower == "on"
 	}
 
 	if cacheStr := lookupProp(props, "system_cache_hours", "system_info_cache_hours", "system_cache_ttl", "cache_ttl"); cacheStr != "" {

@@ -246,3 +246,30 @@ system_cache_hours = 12
 	}
 }
 
+func TestLoadVoiceEchoProtection(t *testing.T) {
+	// 1. Default should be true
+	cfgDef := DefaultConfig()
+	if !cfgDef.VoiceEchoProtection {
+		t.Errorf("expected default VoiceEchoProtection to be true")
+	}
+
+	// 2. Explicitly false
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+	content := `
+[general]
+voice_echo_protection = false
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.VoiceEchoProtection {
+		t.Errorf("expected VoiceEchoProtection false, got true")
+	}
+}
+

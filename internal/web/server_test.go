@@ -56,6 +56,19 @@ func TestWebServerInfoAndStatic(t *testing.T) {
 	if info["voice_silence_ms"] != float64(1800) {
 		t.Errorf("expected voice_silence_ms 1800, got %v", info["voice_silence_ms"])
 	}
+	if info["voice_echo_protection"] != true {
+		t.Errorf("expected voice_echo_protection true by default, got %v", info["voice_echo_protection"])
+	}
+
+	// Test with WithEchoProtection(false)
+	serverNoEcho := NewServer("127.0.0.1:0", geminiClient, nil, "gemini-3.8-flash-lite", 42, 1800, WithEchoProtection(false))
+	wInfo2 := httptest.NewRecorder()
+	serverNoEcho.handleInfo(wInfo2, reqInfo)
+	var info2 map[string]any
+	_ = json.NewDecoder(wInfo2.Body).Decode(&info2)
+	if info2["voice_echo_protection"] != false {
+		t.Errorf("expected voice_echo_protection false, got %v", info2["voice_echo_protection"])
+	}
 }
 
 func TestWebServerChatEndpoint(t *testing.T) {

@@ -193,7 +193,15 @@ func main() {
 	geminiClient := gemini.NewClient(cfg.GeminiAPIKey, cfg.GeminiModel, optsList...)
 
 	// Create and start web server
-	webServer := web.NewServer(cfg.WebAddr, geminiClient, bridge, cfg.GeminiModel, cfg.VoiceGateThreshold, cfg.VoiceSilenceMs)
+	webServer := web.NewServer(
+		cfg.WebAddr,
+		geminiClient,
+		bridge,
+		cfg.GeminiModel,
+		cfg.VoiceGateThreshold,
+		cfg.VoiceSilenceMs,
+		web.WithEchoProtection(cfg.VoiceEchoProtection),
+	)
 	if err := webServer.Start(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("web server error", "error", err)
 		os.Exit(1)
