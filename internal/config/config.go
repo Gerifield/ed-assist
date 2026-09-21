@@ -41,6 +41,10 @@ type Config struct {
 	// Noise gate / VOX voice recording settings
 	VoiceGateThreshold int `json:"voice_gate_threshold"` // default: 40 (0-100 percent)
 	VoiceSilenceMs     int `json:"voice_silence_ms"`     // default: 2000 (ms)
+
+	// External API & System info cache settings
+	SystemCacheHours int           `json:"system_cache_hours"` // default: 8 (hours)
+	SystemCacheTTL   time.Duration `json:"system_cache_ttl"`   // computed duration, default 8*time.Hour
 }
 
 // DefaultConfig returns the default configuration.
@@ -68,6 +72,8 @@ func DefaultConfig() *Config {
 		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
 		VoiceGateThreshold: 40,
 		VoiceSilenceMs:     2000,
+		SystemCacheHours:   8,
+		SystemCacheTTL:     8 * time.Hour,
 	}
 }
 
@@ -278,6 +284,16 @@ func Load(configFileOverride string) (*Config, error) {
 			cfg.VoiceSilenceMs = s
 		} else if d, err := time.ParseDuration(silenceStr); err == nil && d > 0 {
 			cfg.VoiceSilenceMs = int(d / time.Millisecond)
+		}
+	}
+
+	if cacheStr := lookupProp(props, "system_cache_hours", "system_info_cache_hours", "system_cache_ttl", "cache_ttl"); cacheStr != "" {
+		if hours, err := strconv.Atoi(cacheStr); err == nil && hours > 0 {
+			cfg.SystemCacheHours = hours
+			cfg.SystemCacheTTL = time.Duration(hours) * time.Hour
+		} else if d, err := time.ParseDuration(cacheStr); err == nil && d > 0 {
+			cfg.SystemCacheTTL = d
+			cfg.SystemCacheHours = int(d.Hours())
 		}
 	}
 

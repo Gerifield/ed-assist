@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -145,6 +146,13 @@ func (s *Store) initSchema() error {
 	-- Enforce uniqueness by timestamp and system identity so backfills never duplicate rows
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_visited_unique ON visited_systems(visited_at, system_address, system_name);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_targeted_unique ON targeted_systems(targeted_at, system_address, system_name);
+
+	CREATE TABLE IF NOT EXISTS api_cache (
+		cache_key TEXT PRIMARY KEY,
+		response TEXT NOT NULL,
+		expires_at TEXT NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_api_cache_expires ON api_cache(expires_at);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -386,4 +394,63 @@ func FormatVisitedJSON(systems []VisitedSystem) (string, error) {
 func FormatTargetedJSON(systems []TargetedSystem) (string, error) {
 	b, err := json.MarshalIndent(systems, "", "  ")
 	return string(b), err
+}
+
+// GetAPICache fetches a cached API response by key. Returns ("", false, nil) if not found or expired.
+func (s *Store) GetAPICache(ctx context.Context, key string) (string, bool, error) {
+	if s == nil || s.db == nil {
+		return "", false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var response string
+	var expiresAtStr string
+	err := s.db.QueryRowContext(ctx, "SELECT response, expires_at FROM api_cache WHERE cache_key = ?", key).Scan(&response, &expiresAtStr)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+
+	exp, err := time.Parse(time.RFC3339, expiresAtStr)
+	if err != nil || time.Now().UTC().After(exp) {
+		_, _ = s.db.ExecContext(ctx, "DELETE FROM api_cache WHERE cache_key = ?", key)
+		return "", false, nil
+	}
+
+	return response, true, nil
+}
+
+// SetAPICache stores an API response with the specified TTL.
+func (s *Store) SetAPICache(ctx context.Context, key, response string, ttl time.Duration) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	expiresAt := time.Now().UTC().Add(ttl).Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO api_cache (cache_key, response, expires_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(cache_key) DO UPDATE SET
+			response = excluded.response,
+			expires_at = excluded.expires_at
+	`, key, response, expiresAt)
+	return err
+}
+
+// PruneExpiredAPICache deletes expired cache entries from api_cache.
+func (s *Store) PruneExpiredAPICache(ctx context.Context) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM api_cache WHERE expires_at <= ?", now)
+	return err
 }

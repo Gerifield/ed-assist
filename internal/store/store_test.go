@@ -196,3 +196,53 @@ func TestStoreDuplicateTimestampSkipped(t *testing.T) {
 	}
 }
 
+func TestAPICache(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_cache.db")
+
+	s, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("failed creating store: %v", err)
+	}
+	defer s.Close()
+
+	ctx := t.Context()
+
+	// 1. Miss initially
+	val, ok, err := s.GetAPICache(ctx, "nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error on cache get: %v", err)
+	}
+	if ok || val != "" {
+		t.Fatalf("expected cache miss, got ok=%v, val=%s", ok, val)
+	}
+
+	// 2. Set active key
+	err = s.SetAPICache(ctx, "edsm:system:Sol", `{"name":"Sol"}`, 8*time.Hour)
+	if err != nil {
+		t.Fatalf("failed setting cache: %v", err)
+	}
+
+	val, ok, err = s.GetAPICache(ctx, "edsm:system:Sol")
+	if err != nil {
+		t.Fatalf("unexpected error getting cache: %v", err)
+	}
+	if !ok || val != `{"name":"Sol"}` {
+		t.Fatalf("expected cache hit with Sol, got ok=%v, val=%s", ok, val)
+	}
+
+	// 3. Expired key
+	err = s.SetAPICache(ctx, "expired_key", "old", -1*time.Second)
+	if err != nil {
+		t.Fatalf("failed setting expired cache: %v", err)
+	}
+
+	val, ok, err = s.GetAPICache(ctx, "expired_key")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected expired key to miss, got ok=true, val=%s", val)
+	}
+}
+

@@ -3,13 +3,16 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"ed-assist/internal/edapi"
 	"ed-assist/internal/input"
 	"ed-assist/internal/parser"
 	"ed-assist/internal/store"
@@ -295,5 +298,138 @@ func TestMCPServerServeHTTP(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("server shutdown timed out")
+	}
+}
+
+func TestMCPServerExternalAPITools(t *testing.T) {
+	tsEDSM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case strings.Contains(path, "/api-v1/system"):
+			fmt.Fprint(w, `{"name":"Sol","coords":{"x":0,"y":0,"z":0},"information":{"allegiance":"Federation","population":18000000000}}`)
+		case strings.Contains(path, "/api-v1/sphere-systems"):
+			fmt.Fprint(w, `[{"distance":4.38,"name":"Alpha Centauri","coords":{"x":3,"y":0,"z":3},"information":{"population":100000}}]`)
+		case strings.Contains(path, "/stations/market"):
+			fmt.Fprint(w, `{"id":1,"name":"Daedalus","commodities":[{"id":"tritium","name":"Tritium","buyPrice":50000,"sellPrice":49000}]}`)
+		case strings.Contains(path, "/stations"):
+			fmt.Fprint(w, `{"name":"Sol","stations":[{"name":"Daedalus","type":"Coriolis Starport"}]}`)
+		case strings.Contains(path, "/factions"):
+			fmt.Fprint(w, `{"name":"Sol","factions":[{"name":"Mother Gaia","influence":0.31}]}`)
+		case strings.Contains(path, "/bodies"):
+			fmt.Fprint(w, `{"name":"Sol","bodies":[{"name":"Earth","type":"Planet","isLandable":false}]}`)
+		case strings.Contains(path, "/elite-server"):
+			fmt.Fprint(w, `{"status":1,"message":"Good"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer tsEDSM.Close()
+
+	tsSpansh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/route") {
+			fmt.Fprint(w, `{"job":"job-abc","status":"queued"}`)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/results/job-abc") {
+			fmt.Fprint(w, `{"status":"completed","result":{"distance":22000,"system_jumps":[{"system":"Sol"},{"system":"Colonia"}]}}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer tsSpansh.Close()
+
+	edClient := edapi.NewClient(
+		edapi.WithBaseEDSMURL(tsEDSM.URL),
+		edapi.WithBaseSpanshURL(tsSpansh.URL),
+		edapi.WithCacheTTL(8*time.Hour),
+	)
+
+	st := makeSampleStatus()
+	mock := &mockProvider{status: st}
+	s := New(mock, nil, nil, WithEDAPIClient(edClient))
+	ctx := context.Background()
+
+	// 1. search_system (omitted name defaults to destination "Sol")
+	res, err := s.server.GetTool("search_system").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "search_system"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("search_system failed: %v, res: %v", err, res)
+	}
+
+	// 2. nearest_systems
+	res, err = s.server.GetTool("nearest_systems").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "nearest_systems",
+			Arguments: map[string]any{
+				"system_name": "Sol",
+				"radius":      20.0,
+			},
+		},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("nearest_systems failed: %v, res: %v", err, res)
+	}
+
+	// 3. system_stations
+	res, err = s.server.GetTool("system_stations").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "system_stations"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("system_stations failed: %v, res: %v", err, res)
+	}
+
+	// 4. station_market
+	res, err = s.server.GetTool("station_market").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "station_market",
+			Arguments: map[string]any{
+				"system_name":      "Sol",
+				"station_name":     "Daedalus",
+				"filter_commodity": "tritium",
+			},
+		},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("station_market failed: %v, res: %v", err, res)
+	}
+
+	// 5. system_factions
+	res, err = s.server.GetTool("system_factions").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "system_factions"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("system_factions failed: %v, res: %v", err, res)
+	}
+
+	// 6. system_bodies
+	res, err = s.server.GetTool("system_bodies").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "system_bodies"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("system_bodies failed: %v, res: %v", err, res)
+	}
+
+	// 7. plot_neutron_route
+	res, err = s.server.GetTool("plot_neutron_route").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "plot_neutron_route",
+			Arguments: map[string]any{
+				"from":  "Sol",
+				"to":    "Colonia",
+				"range": 50.0,
+			},
+		},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("plot_neutron_route failed: %v, res: %v", err, res)
+	}
+
+	// 8. get_server_status
+	res, err = s.server.GetTool("get_server_status").Handler(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "get_server_status"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("get_server_status failed: %v, res: %v", err, res)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"ed-assist/internal/config"
 	"ed-assist/internal/gemini"
@@ -31,6 +32,7 @@ func main() {
 	modelFlag := flag.String("model", "", "Gemini model (default: gemini-flash-lite-latest)")
 	statusFileFlag := flag.String("status", "", "Override path to Status.json")
 	dbPathFlag := flag.String("db", "", "Path to SQLite database file")
+	cacheHoursFlag := flag.Int("cache-hours", 0, "System info and external API cache TTL in hours (default: 8)")
 	logLevelFlag := flag.String("loglevel", "info", "Log level (debug, info, warn, error)")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	flag.Parse()
@@ -72,6 +74,10 @@ func main() {
 	}
 	if *logLevelFlag != "" {
 		cfg.LogLevel = *logLevelFlag
+	}
+	if *cacheHoursFlag > 0 {
+		cfg.SystemCacheHours = *cacheHoursFlag
+		cfg.SystemCacheTTL = time.Duration(*cacheHoursFlag) * time.Hour
 	}
 
 	// Set up logger
@@ -169,7 +175,7 @@ func main() {
 			}()
 		}
 
-		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController)
+		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController, mcpserver.WithCacheTTL(cfg.SystemCacheTTL))
 		b, err := web.NewInProcessBridge(mcpSrv.Server())
 		if err != nil {
 			slog.Error("failed creating in-process MCP bridge", "error", err)

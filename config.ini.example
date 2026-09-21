@@ -82,3 +82,8 @@ voice_gate_threshold = 40
 
 ; Silence duration in milliseconds before auto-transmitting voice recording (default: 2000ms = 2s)
 voice_silence_ms = 2000
+
+; Galaxy intelligence external API cache time in hours (EDSM / Spansh)
+; Cached persistently in SQLite api_cache table (default: 8 hours)
+system_cache_hours = 8
+
