@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"ed-assist/internal/gemini"
+	"ed-assist/internal/llm"
 )
 
 //go:embed static/*
@@ -20,14 +20,14 @@ var staticFS embed.FS
 // Server hosts the web client UI and JSON API endpoints.
 type Server struct {
 	addr           string
-	gemini         *gemini.Client
+	ai             llm.Client
 	bridge         *MCPBridge
 	modelName      string
 	gateThreshold  int
 	silenceMs      int
 	echoProtection bool
 	historyMu      sync.Mutex
-	history        []gemini.ChatMessage
+	history        []llm.ChatMessage
 	httpServer     *http.Server
 }
 
@@ -42,7 +42,7 @@ func WithEchoProtection(enabled bool) ServerOption {
 }
 
 // NewServer creates a new web assistant server.
-func NewServer(addr string, geminiClient *gemini.Client, bridge *MCPBridge, modelName string, gateThreshold, silenceMs int, opts ...ServerOption) *Server {
+func NewServer(addr string, aiClient llm.Client, bridge *MCPBridge, modelName string, gateThreshold, silenceMs int, opts ...ServerOption) *Server {
 	if addr == "" {
 		addr = "127.0.0.1:3000"
 	}
@@ -57,7 +57,7 @@ func NewServer(addr string, geminiClient *gemini.Client, bridge *MCPBridge, mode
 	}
 	srv := &Server{
 		addr:           addr,
-		gemini:         geminiClient,
+		ai:             aiClient,
 		bridge:         bridge,
 		modelName:      modelName,
 		gateThreshold:  gateThreshold,
@@ -144,12 +144,15 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var systemPrompt string
-	if s.gemini != nil {
-		systemPrompt = s.gemini.SystemPrompt()
+	provider := "unknown"
+	if s.ai != nil {
+		systemPrompt = s.ai.SystemPrompt()
+		provider = s.ai.Provider()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
+		"provider":              provider,
 		"model":                 s.modelName,
 		"mcp_mode":              mode,
 		"tool_count":            toolCount,
@@ -194,7 +197,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.historyMu.Lock()
-	historyCopy := make([]gemini.ChatMessage, len(s.history))
+	historyCopy := make([]llm.ChatMessage, len(s.history))
 	copy(historyCopy, s.history)
 	s.historyMu.Unlock()
 
@@ -203,7 +206,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		audioBytes = []byte(req.AudioB64)
 	}
 
-	reply, err := s.gemini.ExecuteTurn(r.Context(), historyCopy, req.Prompt, audioBytes, req.AudioMime)
+	if s.ai == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(ChatResponse{Error: "No AI client configured"})
+		return
+	}
+
+	reply, err := s.ai.ExecuteTurn(r.Context(), historyCopy, req.Prompt, audioBytes, req.AudioMime)
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		slog.Error("failed executing user command", "error", err)
@@ -217,11 +227,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// Update conversation history
 	s.historyMu.Lock()
 	if req.Prompt != "" {
-		s.history = append(s.history, gemini.ChatMessage{Role: "user", Text: req.Prompt})
+		s.history = append(s.history, llm.ChatMessage{Role: "user", Text: req.Prompt})
 	} else if req.AudioB64 != "" {
-		s.history = append(s.history, gemini.ChatMessage{Role: "user", Text: "[Voice Message]"})
+		s.history = append(s.history, llm.ChatMessage{Role: "user", Text: "[Voice Message]"})
 	}
-	s.history = append(s.history, gemini.ChatMessage{Role: "model", Text: reply})
+	s.history = append(s.history, llm.ChatMessage{Role: "assistant", Text: reply})
 
 	// Retain only latest 20 turns
 	if len(s.history) > 20 {

@@ -32,7 +32,8 @@ A lightweight, cross-platform Go helper for **Elite Dangerous** that monitors, r
 - **Standalone Web Cockpit Assistant (COVAS)**:
   - Built-in self-hosted web HUD (`ed-assist-web`) with text and voice input.
   - Automatic VOX noise gate with live audio VU-meter and silence auto-transmission.
-  - Multi-turn AI copilot powered by Google Gemini (`gemini-flash-lite-latest`) with full MCP function calling.
+  - Multi-provider AI reasoning: Google Gemini (`gemini-flash-lite-latest`) or any **OpenAI-compatible** provider (**DeepSeek**, **Groq**, **Ollama**, **LM Studio**, **OpenRouter**) with multi-turn tool calling.
+  - Interactive Text-to-Speech (TTS) Read Aloud with language presets, browser voice selector, and acoustic feedback protection.
   - Client-side Markdown rendering (bold, italic, code blocks, lists) and structured server-side INFO logging.
 - **Flexible Configuration**:
   - Configurable via `config.ini` located next to the binary or in the working directory.
@@ -229,20 +230,39 @@ bindings_path =
 loglevel = info
 ; logfile = ed-assist.log
 
-; Web Cockpit Assistant & Gemini API Configuration (for ed-assist-web)
+; Web Cockpit Assistant & AI Configuration (for ed-assist-web)
 ; Web UI listen address and port (default: 127.0.0.1:3000)
 web_addr = 127.0.0.1:3000
 
+; AI Provider selection: "gemini" (default) or "openai" (OpenAI-compatible)
+; "openai" mode supports OpenAI, DeepSeek, Groq, Ollama, LM Studio, OpenRouter, etc.
+ai_provider = gemini
+
+; --- Google Gemini Configuration (when ai_provider = gemini) ---
 ; Google Gemini API key (or export GEMINI_API_KEY environment variable)
 gemini_api_key = 
 
 ; Gemini model for reasoning (default: gemini-flash-lite-latest)
 gemini_model = gemini-flash-lite-latest
 
-; Custom system instruction prompt for COVAS / Gemini assistant.
+; --- OpenAI / OpenAI-compatible Configuration (when ai_provider = openai) ---
+; API key for OpenAI or compatible provider (or export OPENAI_API_KEY environment variable)
+openai_api_key = 
+
+; Model identifier (e.g. gpt-4o-mini, deepseek-chat, llama3.1, mistral)
+openai_model = gpt-4o-mini
+
+; Base URL for OpenAI-compatible endpoint (default: https://api.openai.com/v1)
+; Examples: DeepSeek (https://api.deepseek.com/v1), Ollama (http://localhost:11434/v1)
+openai_base_url = https://api.openai.com/v1
+
+; Custom system instruction prompt for COVAS cockpit assistant.
 ; If omitted or empty, ed-assist uses the default Elite Dangerous COVAS cockpit prompt.
 ; Accepts prompt text directly (single line or indented multi-line) or path to a text file (e.g. prompt.txt)
 system_prompt = 
+
+; Maximum tool calling rounds per conversation turn to prevent infinite loops (default: 10)
+max_tool_rounds = 10
 
 ; MCP connection mode: "inprocess" (all-in-one), "http" (SSE), or "stdio"
 gemini_mcp_mode = inprocess
@@ -366,16 +386,19 @@ Or specify a dedicated config file:
 
 ## Web Cockpit Assistant (COVAS)
 
-`ed-assist-web` is a standalone web application providing an in-cockpit AI voice & text copilot (**COVAS** = *Cockpit Voice Assistant*) powered by Google Gemini (default: `gemini-flash-lite-latest`) and integrated with the MCP server tools.
+`ed-assist-web` is a standalone web application providing an in-cockpit AI voice & text copilot (**COVAS** = *Cockpit Voice Assistant*) powered by **Google Gemini** (default: `gemini-flash-lite-latest`) or any **OpenAI-compatible** provider (**DeepSeek**, **Groq**, **Ollama**, **LM Studio**, **OpenRouter**) with multi-turn tool calling over the MCP bridge.
 
 ### Features
 - **Minimal, responsive dark HUD**: Built with pure HTML5 and vanilla JavaScript (zero frontend dependencies or node build steps).
+- **Multi-Provider AI Reasoning**:
+  - **Google Gemini**: Native multimodal audio & text reasoning with tool calling.
+  - **OpenAI-Compatible Providers**: Full support for DeepSeek (`deepseek-chat`), local Ollama (`llama3.1`, etc.), Groq, and official OpenAI endpoints (`gpt-4o-mini`, etc.).
 - **Rich In-Browser Markdown Parsing**:
   - Safe, XSS-protected client-side formatter.
   - Automatically parses `**bold**`, `*italic*`, `` `inline code` ``, ```` ```code blocks``` ````, bullet/numbered lists, and clean paragraph breaks styled to match the orange/cyan cockpit aesthetic.
 - **Manual & Automatic Voice Commands**:
   - **Manual Push-to-Record (`REC`)**: Click to start recording cockpit voice, click `STOP` to encode and transmit.
-  - **Automatic Noise Gate (`VOX`)**: Real-time voice activity detection with interactive threshold slider (default: 40%) and live input volume visualizer. When speaking above the threshold, recording automatically triggers (slider glows red); when silence is detected for the configured duration (default: 2s, set via `voice_silence_ms`), the audio is automatically transmitted to Gemini, while the VOX listener remains active for the next command.
+  - **Automatic Noise Gate (`VOX`)**: Real-time voice activity detection with interactive threshold slider (default: 40%) and live input volume visualizer. When speaking above the threshold, recording automatically triggers (slider glows red); when silence is detected for the configured duration (default: 2s, set via `voice_silence_ms`), the audio is automatically transmitted to the AI copilot, while the VOX listener remains active for the next command.
 - **Read Aloud Voice Output (Browser Web Speech API)**:
   - Hands-free audio responses spoken directly by the browser using the Web Speech API (zero external dependencies).
   - Interactive **TTS toggle button** (`🔊 TTS`) to activate or deactivate voice synthesis (saved in `localStorage`).
@@ -390,8 +413,6 @@ Or specify a dedicated config file:
     time=... level=INFO msg="received user command" prompt="what time is it?" has_audio=false
     time=... level=INFO msg="command completed successfully" reply_len=142
     ```
-- **Gemini Reasoning & Tool State**:
-  - Full multi-turn function calling with cryptographic `thought_signature` preservation across tool execution turns.
 - **Flexible MCP Connectivity**:
   - `inprocess` (default): All-in-one execution running telemetry reader, SQLite storage, DirectInput game control, and MCP tools directly in the web binary.
   - `http`: Connects to an external `ed-assist` server serving MCP over HTTP/SSE.
@@ -399,12 +420,16 @@ Or specify a dedicated config file:
 
 ### Launching `ed-assist-web`
 ```bash
-# Set your Gemini API key (or add gemini_api_key to config.ini)
+# Option 1: Run with Google Gemini
 export GEMINI_API_KEY="your-gemini-api-key"
-
-# Build and run
-make build-web
 ./bin/ed-assist-web
+
+# Option 2: Run with DeepSeek (OpenAI-compatible)
+export OPENAI_API_KEY="your-deepseek-api-key"
+./bin/ed-assist-web -provider openai -openai-model deepseek-chat -openai-endpoint https://api.deepseek.com/v1
+
+# Option 3: Run with local Ollama (zero cloud keys)
+./bin/ed-assist-web -provider openai -openai-model llama3.1 -openai-endpoint http://localhost:11434/v1
 ```
 Open your browser at `http://127.0.0.1:3000`.
 
@@ -413,10 +438,14 @@ Open your browser at `http://127.0.0.1:3000`.
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `-addr` | `string` | `127.0.0.1:3000` | HTTP listen address and port for the web UI |
-| `-model` | `string` | `gemini-flash-lite-latest` | Gemini model name |
+| `-provider` | `string` | `gemini` | AI provider: `gemini` or `openai` (OpenAI-compatible) |
+| `-model` | `string` | `gemini-flash-lite-latest` | Model identifier (for active provider) |
+| `-api-key` | `string` | `""` | API key (for active provider, or set via env) |
+| `-openai-key` | `string` | `""` | OpenAI / OpenAI-compatible API key |
+| `-openai-model` | `string` | `gpt-4o-mini` | OpenAI-compatible model name (e.g. `deepseek-chat`) |
+| `-openai-endpoint`| `string`| `https://api.openai.com/v1` | OpenAI-compatible base URL |
 | `-mcp-mode` | `string` | `inprocess` | MCP transport mode: `inprocess`, `http`, or `stdio` |
 | `-mcp-endpoint` | `string` | `http://127.0.0.1:8080/sse` | MCP endpoint URL (for `http`) or binary path (for `stdio`) |
-| `-api-key` | `string` | `""` | Gemini API key (or `GEMINI_API_KEY` env) |
 | `-status` | `string` | `""` | Override path to `Status.json` |
 | `-db` | `string` | `""` | Path to SQLite database file |
 | `-cache-hours` | `int` | `8` | Galaxy intelligence API cache TTL in hours for EDSM/Spansh queries (backed by SQLite) |
@@ -475,8 +504,15 @@ ed-assist/
 │   ├── flags/
 │   │   └── flags.go             # Bitmask constants for Flags, Flags2, and GuiFocus
 │   ├── gemini/
-│   │   ├── client.go            # Gemini API client with audio/text multi-turn & MCP tools
+│   │   ├── client.go            # Gemini client alias for backwards compatibility
 │   │   └── client_test.go
+│   ├── llm/
+│   │   ├── llm.go               # Common Client interface, ChatMessage, MCPCaller
+│   │   ├── gemini.go            # Google Gemini API client with MCP tool calling
+│   │   ├── openai.go            # OpenAI-compatible API client (DeepSeek, Ollama, etc.)
+│   │   ├── factory.go           # Provider factory from runtime configuration
+│   │   ├── gemini_test.go
+│   │   └── openai_test.go
 │   ├── input/
 │   │   ├── binds.go             # Elite Dangerous .binds XML parser and preset detector
 │   │   ├── binds_test.go
