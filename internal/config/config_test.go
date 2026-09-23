@@ -505,6 +505,135 @@ auto_time_context = false
 	}
 }
 
+func TestLoadAISection(t *testing.T) {
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[ai]
+provider = openai
+openai_api_key = sk-ai-section-test
+openai_model = gpt-4o-mini
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AIProvider != "openai" {
+		t.Errorf("expected AIProvider to be openai, got %s", cfg.AIProvider)
+	}
+	if cfg.OpenAIAPIKey != "sk-ai-section-test" {
+		t.Errorf("expected OpenAIAPIKey to be sk-ai-section-test, got %s", cfg.OpenAIAPIKey)
+	}
+	if cfg.OpenAIModel != "gpt-4o-mini" {
+		t.Errorf("expected OpenAIModel to be gpt-4o-mini, got %s", cfg.OpenAIModel)
+	}
+}
+
+func TestLoadSTTLanguageConfig(t *testing.T) {
+	// 1. Default should be "en"
+	def := DefaultConfig()
+	if def.STTLanguage != "en" {
+		t.Errorf("expected default STTLanguage 'en', got '%s'", def.STTLanguage)
+	}
+
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	// 2. Explicit language
+	content := `
+[stt]
+language = hu
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.STTLanguage != "hu" {
+		t.Errorf("expected STTLanguage 'hu', got '%s'", cfg.STTLanguage)
+	}
+
+	// 3. Language = auto -> empty for auto-detect
+	contentAuto := `
+[stt]
+language = auto
+`
+	if err := os.WriteFile(iniPath, []byte(contentAuto), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.STTLanguage != "" {
+		t.Errorf("expected STTLanguage empty for auto, got '%s'", cfg.STTLanguage)
+	}
+
+	// 4. Language = (empty in INI) -> empty for auto-detect
+	contentEmpty := `
+[stt]
+language = 
+`
+	if err := os.WriteFile(iniPath, []byte(contentEmpty), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.STTLanguage != "" {
+		t.Errorf("expected STTLanguage empty when value is blank, got '%s'", cfg.STTLanguage)
+	}
+}
+
+func TestLoadMaxVisitedAndTargetedSystems(t *testing.T) {
+	// 1. Defaults
+	def := DefaultConfig()
+	if def.MaxVisitedSystems != 100 {
+		t.Errorf("expected default MaxVisitedSystems 100, got %d", def.MaxVisitedSystems)
+	}
+	if def.MaxTargetedSystems != 100 {
+		t.Errorf("expected default MaxTargetedSystems 100, got %d", def.MaxTargetedSystems)
+	}
+
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+max_visited_systems = 250
+max_targeted_systems = 50
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxVisitedSystems != 250 {
+		t.Errorf("expected MaxVisitedSystems 250, got %d", cfg.MaxVisitedSystems)
+	}
+	if cfg.MaxTargetedSystems != 50 {
+		t.Errorf("expected MaxTargetedSystems 50, got %d", cfg.MaxTargetedSystems)
+	}
+}
+
+
+
+
 
 
 

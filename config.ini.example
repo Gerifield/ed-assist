@@ -38,9 +38,15 @@ mcp_transport = stdio
 ; Accepts "127.0.0.1:8080", ":8080", or simply port number "8080"
 mcp_addr = 127.0.0.1:8080
 
-; Optional system tracking (latest 100 visited systems & 100 targeted destinations in SQLite)
+; Optional system tracking (visited systems & targeted destinations in SQLite)
 ; Set to true or launch with -track to enable
 enable_tracking = false
+
+; Maximum number of visited star systems to retain in SQLite history (default: 100)
+max_visited_systems = 100
+
+; Maximum number of targeted systems/destinations to retain in SQLite history (default: 100)
+max_targeted_systems = 100
 
 ; SQLite database path for visited and targeted system tracking (used when enable_tracking = true)
 ; If empty or omitted, defaults to ed_assist.db located next to the binary
@@ -57,15 +63,40 @@ key_hold_ms = 80
 ; If empty, auto-detects from %LOCALAPPDATA%\Frontier Developments\Elite Dangerous\Options\Bindings
 bindings_path =
 
-; Web Cockpit Assistant & AI Configuration (for ed-assist-web)
+; Web Cockpit Assistant (for ed-assist-web)
 ; Web UI listen address and port (default: 127.0.0.1:3000)
 web_addr = 127.0.0.1:3000
 
+; Audio input processing strategy:
+; transcribe = pre-transcribe voice audio to text via STT, then send pure text prompt to AI (default)
+; native     = send raw audio bytes directly to multimodal AI (e.g. Gemini)
+audio_input_mode = transcribe
+
+[stt]
+; Speech-to-Text configuration (automatically enabled when audio_input_mode = transcribe)
+; Chosen backend: "groq", "openai", "local_whisper"
+backend = groq
+
+; Groq API key (or export GROQ_API_KEY environment variable)
+groq_api_key =
+groq_model = whisper-large-v3-turbo
+
+; Base URL for OpenAI-compatible STT endpoint (default: https://api.groq.com/openai/v1)
+openai_base_url = https://api.groq.com/openai/v1
+
+; Spoken language code: default is "en" (forcing English improves recognition of accented speech).
+; Leave empty (language = ) or set to "auto" to let Whisper automatically detect the spoken language.
+language = en
+
+; Elite Dangerous specific prompt vocabulary to improve Whisper transcription accuracy
+prompt_vocabulary = FSD, Frame Shift Drive, SCB, SRV, COVAS, Chaff, Heatsink, Pips, Limpet, Supercruise, Coriolis, Thargoid, Witchspace
+
+[ai]
 ; AI Provider selection: "gemini" (default) or "openai" (OpenAI-compatible)
 ; "openai" mode supports OpenAI, DeepSeek, Groq, Ollama, LM Studio, OpenRouter, etc.
-ai_provider = gemini
+provider = gemini
 
-; --- Google Gemini Configuration (when ai_provider = gemini) ---
+; --- Google Gemini Configuration (when provider = gemini) ---
 ; Google Gemini API key (or export GEMINI_API_KEY environment variable)
 gemini_api_key = 
 

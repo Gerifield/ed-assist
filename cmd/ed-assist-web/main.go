@@ -17,6 +17,7 @@ import (
 	"ed-assist/internal/mcpserver"
 	"ed-assist/internal/reader"
 	"ed-assist/internal/store"
+	"ed-assist/internal/stt"
 	"ed-assist/internal/tracker"
 	"ed-assist/internal/web"
 )
@@ -37,6 +38,8 @@ func main() {
 	openaiEndpointFlag := flag.String("openai-endpoint", "", "OpenAI-compatible base URL (e.g. https://api.openai.com/v1, https://api.deepseek.com/v1)")
 	statusFileFlag := flag.String("status", "", "Override path to Status.json")
 	dbPathFlag := flag.String("db", "", "Path to SQLite database file")
+	maxVisitedFlag := flag.Int("max-visited", 0, "Maximum number of visited star systems to retain in SQLite (default: 100)")
+	maxTargetedFlag := flag.Int("max-targeted", 0, "Maximum number of targeted systems to retain in SQLite (default: 100)")
 	cacheHoursFlag := flag.Int("cache-hours", 0, "System info and external API cache TTL in hours (default: 8)")
 	maxToolRoundsFlag := flag.Int("max-tool-rounds", 0, "Maximum rounds for AI tool calling loop (default: 10)")
 	logLevelFlag := flag.String("loglevel", "info", "Log level (debug, info, warn, error)")
@@ -108,6 +111,12 @@ func main() {
 	if *maxToolRoundsFlag > 0 {
 		cfg.MaxToolRounds = *maxToolRoundsFlag
 	}
+	if *maxVisitedFlag > 0 {
+		cfg.MaxVisitedSystems = *maxVisitedFlag
+	}
+	if *maxTargetedFlag > 0 {
+		cfg.MaxTargetedSystems = *maxTargetedFlag
+	}
 
 	// Set up logger
 	opts := &slog.HandlerOptions{}
@@ -128,6 +137,8 @@ func main() {
 		"web_addr", cfg.WebAddr,
 		"model", cfg.GeminiModel,
 		"mcp_mode", cfg.GeminiMCPMode,
+		"max_visited", cfg.MaxVisitedSystems,
+		"max_targeted", cfg.MaxTargetedSystems,
 	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -170,7 +181,10 @@ func main() {
 
 	default: // "inprocess" - self-contained mode!
 		slog.Info("running in-process MCP server and telemetry engine")
-		st, err := store.New(cfg.DBPath)
+		st, err := store.New(cfg.DBPath,
+			store.WithMaxVisited(cfg.MaxVisitedSystems),
+			store.WithMaxTargeted(cfg.MaxTargetedSystems),
+		)
 		if err != nil {
 			slog.Warn("could not initialize SQLite store, continuing in-memory", "error", err)
 		} else {
@@ -240,6 +254,33 @@ func main() {
 	modelDisplayName := aiClient.ModelName()
 	slog.Info("AI copilot initialized", "provider", aiClient.Provider(), "model", modelDisplayName)
 
+	// Initialize STT transcriber if enabled
+	var transcriber stt.Transcriber
+	if cfg.STTEnabled {
+		sttKey := cfg.STTGroqAPIKey
+		if sttKey == "" {
+			sttKey = cfg.OpenAIAPIKey
+		}
+		if sttKey == "" && (cfg.STTBackend == "groq" || cfg.STTBackend == "openai") {
+			slog.Warn("STT enabled but neither groq_api_key nor openai_api_key configured; transcription may fail unless using a local backend", "backend", cfg.STTBackend)
+		}
+		t, err := stt.NewTranscriber(stt.Config{
+			Enabled:          cfg.STTEnabled,
+			Backend:          cfg.STTBackend,
+			APIKey:           sttKey,
+			Model:            cfg.STTGroqModel,
+			BaseURL:          cfg.STTOpenAIBaseURL,
+			PromptVocabulary: cfg.STTPromptVocabulary,
+			Language:         cfg.STTLanguage,
+		})
+		if err != nil {
+			slog.Warn("failed initializing STT transcriber", "error", err)
+		} else {
+			transcriber = t
+			slog.Info("STT transcriber initialized", "backend", cfg.STTBackend, "audio_input_mode", cfg.AudioInputMode, "language", cfg.STTLanguage)
+		}
+	}
+
 	// Create and start web server
 	webServer := web.NewServer(
 		cfg.WebAddr,
@@ -249,6 +290,8 @@ func main() {
 		cfg.VoiceGateThreshold,
 		cfg.VoiceSilenceMs,
 		web.WithEchoProtection(cfg.VoiceEchoProtection),
+		web.WithTranscriber(transcriber),
+		web.WithAudioInputMode(cfg.AudioInputMode),
 	)
 	if err := webServer.Start(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("web server error", "error", err)

@@ -275,7 +275,8 @@ func (s *MCPServer) registerTools() {
 			if s.store == nil {
 				return mcp.NewToolResultError("database tracking is not enabled (run with -track or set enable_tracking = true in config.ini)"), nil
 			}
-			limit := request.GetInt("limit", 100)
+			defLimit := s.store.MaxVisited()
+			limit := request.GetInt("limit", defLimit)
 			visited, err := s.store.GetVisited(limit)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed retrieving visited systems: %v", err)), nil
@@ -291,14 +292,15 @@ func (s *MCPServer) registerTools() {
 	// Tool 8: get_targeted_systems (History of targeted star systems from SQLite)
 	s.server.AddTool(
 		mcp.NewTool("get_targeted_systems",
-			mcp.WithDescription("Get the history of targeted destinations and star systems (latest up to 100 entries, stored in SQLite database)"),
-			mcp.WithNumber("limit", mcp.Description("Maximum number of targeted systems to return (1-100, default 100)")),
+			mcp.WithDescription("Get the history of targeted destinations and star systems (stored in SQLite database)"),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of targeted systems to return")),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if s.store == nil {
 				return mcp.NewToolResultError("database tracking is not enabled (run with -track or set enable_tracking = true in config.ini)"), nil
 			}
-			limit := request.GetInt("limit", 100)
+			defLimit := s.store.MaxTargeted()
+			limit := request.GetInt("limit", defLimit)
 			targeted, err := s.store.GetTargeted(limit)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed retrieving targeted systems: %v", err)), nil
@@ -710,7 +712,7 @@ func (s *MCPServer) registerResources() {
 			if s.store == nil {
 				return nil, fmt.Errorf("database tracking is not enabled (run with -track or set enable_tracking = true in config.ini)")
 			}
-			visited, err := s.store.GetVisited(100)
+			visited, err := s.store.GetVisited(s.store.MaxVisited())
 			if err != nil {
 				return nil, err
 			}
@@ -733,14 +735,14 @@ func (s *MCPServer) registerResources() {
 		mcp.NewResource(
 			"ed://systems/targeted",
 			"Targeted Systems",
-			mcp.WithResourceDescription("Latest 100 targeted systems/destinations stored in local SQLite database"),
+			mcp.WithResourceDescription("Latest targeted systems/destinations stored in local SQLite database"),
 			mcp.WithMIMEType("application/json"),
 		),
 		func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 			if s.store == nil {
 				return nil, fmt.Errorf("database tracking is not enabled (run with -track or set enable_tracking = true in config.ini)")
 			}
-			targeted, err := s.store.GetTargeted(100)
+			targeted, err := s.store.GetTargeted(s.store.MaxTargeted())
 			if err != nil {
 				return nil, err
 			}

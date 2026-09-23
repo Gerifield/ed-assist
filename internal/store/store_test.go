@@ -246,3 +246,64 @@ func TestAPICache(t *testing.T) {
 	}
 }
 
+func TestStoreCustomPruning(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_custom_prune.db")
+
+	s, err := New(dbPath, WithMaxVisited(15), WithMaxTargeted(10))
+	if err != nil {
+		t.Fatalf("failed creating store: %v", err)
+	}
+	defer s.Close()
+
+	if s.MaxVisited() != 15 {
+		t.Errorf("expected MaxVisited 15, got %d", s.MaxVisited())
+	}
+	if s.MaxTargeted() != 10 {
+		t.Errorf("expected MaxTargeted 10, got %d", s.MaxTargeted())
+	}
+
+	baseTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 1; i <= 30; i++ {
+		_ = s.RecordVisited(VisitedSystem{
+			SystemName:    fmt.Sprintf("Visited-%02d", i),
+			SystemAddress: int64(1000 + i),
+			VisitedAt:     baseTime.Add(time.Duration(i) * time.Minute),
+		})
+		_ = s.RecordTargeted(TargetedSystem{
+			SystemName:    fmt.Sprintf("Target-%02d", i),
+			SystemAddress: int64(2000 + i),
+			TargetedAt:    baseTime.Add(time.Duration(i) * time.Minute),
+		})
+	}
+
+	visited, err := s.GetVisited(50)
+	if err != nil {
+		t.Fatalf("failed getting visited: %v", err)
+	}
+	if len(visited) != 15 {
+		t.Errorf("expected 15 visited due to custom limit, got %d", len(visited))
+	}
+	if visited[0].SystemName != "Visited-30" {
+		t.Errorf("expected newest visited to be Visited-30, got %s", visited[0].SystemName)
+	}
+	if visited[len(visited)-1].SystemName != "Visited-16" {
+		t.Errorf("expected oldest visited to be Visited-16, got %s", visited[len(visited)-1].SystemName)
+	}
+
+	targeted, err := s.GetTargeted(50)
+	if err != nil {
+		t.Fatalf("failed getting targeted: %v", err)
+	}
+	if len(targeted) != 10 {
+		t.Errorf("expected 10 targeted due to custom limit, got %d", len(targeted))
+	}
+	if targeted[0].SystemName != "Target-30" {
+		t.Errorf("expected newest targeted to be Target-30, got %s", targeted[0].SystemName)
+	}
+	if targeted[len(targeted)-1].SystemName != "Target-21" {
+		t.Errorf("expected oldest targeted to be Target-21, got %s", targeted[len(targeted)-1].SystemName)
+	}
+}
+
+

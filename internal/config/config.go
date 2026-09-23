@@ -17,11 +17,13 @@ import (
 
 // Config holds runtime configuration options for ed-assist.
 type Config struct {
-	EnableTracking bool          `json:"enable_tracking"`
-	GameControl    bool          `json:"game_control"`
-	KeyHoldMs      int           `json:"key_hold_ms"`
-	BindingsPath   string        `json:"bindings_path"`
-	DBPath         string        `json:"db_path"`
+	EnableTracking     bool          `json:"enable_tracking"`
+	MaxVisitedSystems  int           `json:"max_visited_systems"`  // default: 100
+	MaxTargetedSystems int           `json:"max_targeted_systems"` // default: 100
+	GameControl        bool          `json:"game_control"`
+	KeyHoldMs          int           `json:"key_hold_ms"`
+	BindingsPath       string        `json:"bindings_path"`
+	DBPath             string        `json:"db_path"`
 	StatusFilePath string        `json:"status_file_path"`
 	ConfigSource   string        `json:"config_source"`
 	EnableMCP      bool          `json:"enable_mcp"`
@@ -54,6 +56,16 @@ type Config struct {
 	VoiceSilenceMs       int  `json:"voice_silence_ms"`       // default: 2000 (ms)
 	VoiceEchoProtection bool `json:"voice_echo_protection"` // default: true (suppress VOX trigger while COVAS speaks aloud)
 
+	// Audio input mode & STT settings
+	AudioInputMode      string `json:"audio_input_mode"`       // "native" or "transcribe"
+	STTEnabled          bool   `json:"stt_enabled"`            // true/false
+	STTBackend          string `json:"stt_backend"`            // "groq", "openai", "local_whisper"
+	STTGroqAPIKey       string `json:"stt_groq_api_key"`       // or GROQ_API_KEY env
+	STTGroqModel        string `json:"stt_groq_model"`         // default: "whisper-large-v3-turbo"
+	STTOpenAIBaseURL    string `json:"stt_openai_base_url"`     // default: "https://api.groq.com/openai/v1"
+	STTPromptVocabulary string `json:"stt_prompt_vocabulary"`  // Elite Dangerous prompt vocabulary for Whisper
+	STTLanguage         string `json:"stt_language"`           // STT language code: default "en", empty for auto-detect
+
 	// External API & System info cache settings
 	SystemCacheHours int           `json:"system_cache_hours"` // default: 8 (hours)
 	SystemCacheTTL   time.Duration `json:"system_cache_ttl"`   // computed duration, default 8*time.Hour
@@ -63,9 +75,11 @@ type Config struct {
 func DefaultConfig() *Config {
 	defaultPath := DetermineDefaultStatusPath()
 	return &Config{
-		EnableTracking: false,
-		GameControl:    false,
-		KeyHoldMs:      80,
+		EnableTracking:     false,
+		MaxVisitedSystems:  100,
+		MaxTargetedSystems: 100,
+		GameControl:        false,
+		KeyHoldMs:          80,
 		BindingsPath:   "",
 		DBPath:         DetermineDefaultDBPath(),
 		StatusFilePath: defaultPath,
@@ -83,7 +97,7 @@ func DefaultConfig() *Config {
 		GeminiModel:    "gemini-flash-lite-latest",
 		OpenAIModel:    "gpt-4o-mini",
 		OpenAIBaseURL:  "https://api.openai.com/v1",
-		GeminiMCPMode:  "http",
+		GeminiMCPMode:  "inprocess",
 		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
 		SystemPrompt:   llm.DefaultSystemPrompt,
 		MaxToolRounds:  10,
@@ -91,8 +105,15 @@ func DefaultConfig() *Config {
 		VoiceGateThreshold:   40,
 		VoiceSilenceMs:       2000,
 		VoiceEchoProtection: true,
-		SystemCacheHours:   8,
-		SystemCacheTTL:     8 * time.Hour,
+		AudioInputMode:      "transcribe",
+		STTEnabled:          true,
+		STTBackend:          "groq",
+		STTGroqModel:        "whisper-large-v3-turbo",
+		STTOpenAIBaseURL:    "https://api.groq.com/openai/v1",
+		STTPromptVocabulary: "FSD, Frame Shift Drive, SCB, SRV, COVAS, Chaff, Heatsink, Pips, Limpet, Supercruise, Coriolis, Thargoid, Witchspace",
+		STTLanguage:         "en",
+		SystemCacheHours:    8,
+		SystemCacheTTL:      8 * time.Hour,
 	}
 }
 
@@ -182,6 +203,18 @@ func Load(configFileOverride string) (*Config, error) {
 		cfg.EnableTracking = trackLower == "true" || trackLower == "1" || trackLower == "yes" || trackLower == "on"
 	}
 
+	if vStr := lookupProp(props, "max_visited_systems", "visited_systems_limit", "max_visited", "max_locations", "history_visited_limit"); vStr != "" {
+		if n, err := strconv.Atoi(vStr); err == nil && n > 0 {
+			cfg.MaxVisitedSystems = n
+		}
+	}
+
+	if tStr := lookupProp(props, "max_targeted_systems", "targeted_systems_limit", "max_targets", "max_targeted", "history_targeted_limit"); tStr != "" {
+		if n, err := strconv.Atoi(tStr); err == nil && n > 0 {
+			cfg.MaxTargetedSystems = n
+		}
+	}
+
 	if gcStr := lookupProp(props, "game_control", "control", "enable_game_control", "enable_control"); gcStr != "" {
 		gcLower := strings.ToLower(gcStr)
 		cfg.GameControl = gcLower == "true" || gcLower == "1" || gcLower == "yes" || gcLower == "on"
@@ -268,7 +301,7 @@ func Load(configFileOverride string) (*Config, error) {
 	}
 
 	// AI Provider selection
-	if provider := lookupProp(props, "ai_provider", "provider", "model_provider", "llm_provider"); provider != "" {
+	if provider := lookupProp(props, "ai.provider", "ai.ai_provider", "ai_provider", "provider", "model_provider", "llm_provider"); provider != "" {
 		pLower := strings.ToLower(provider)
 		if pLower == "openai" || pLower == "openai-compatible" || pLower == "deepseek" || pLower == "ollama" || pLower == "groq" || pLower == "lmstudio" {
 			cfg.AIProvider = "openai"
@@ -331,7 +364,7 @@ func Load(configFileOverride string) (*Config, error) {
 	}
 
 	// Auto-detect provider if not explicitly given
-	if lookupProp(props, "ai_provider", "provider", "model_provider", "llm_provider") == "" {
+	if lookupProp(props, "ai.provider", "ai.ai_provider", "ai_provider", "provider", "model_provider", "llm_provider") == "" {
 		if (cfg.OpenAIAPIKey != "" || lookupProp(props, "openai_model", "openai_base_url") != "") && cfg.GeminiAPIKey == "" {
 			cfg.AIProvider = "openai"
 		}
@@ -398,6 +431,50 @@ func Load(configFileOverride string) (*Config, error) {
 		cfg.VoiceEchoProtection = echoLower == "true" || echoLower == "1" || echoLower == "yes" || echoLower == "on"
 	}
 
+	if aim := lookupProp(props, "audio_input_mode", "input_mode"); aim != "" {
+		cfg.AudioInputMode = strings.ToLower(aim)
+	}
+
+	// STT enablement: by default follows audio_input_mode == "transcribe"
+	cfg.STTEnabled = cfg.AudioInputMode == "transcribe"
+	if sttEnStr := lookupProp(props, "stt.enabled", "stt_enabled", "enabled"); sttEnStr != "" {
+		sttLower := strings.ToLower(sttEnStr)
+		cfg.STTEnabled = sttLower == "true" || sttLower == "1" || sttLower == "yes" || sttLower == "on"
+	}
+
+	if backend := lookupProp(props, "stt.backend", "stt_backend", "backend"); backend != "" {
+		cfg.STTBackend = strings.ToLower(backend)
+	}
+
+	if gKey := lookupProp(props, "stt.groq_api_key", "groq_api_key", "stt_groq_api_key"); gKey != "" {
+		cfg.STTGroqAPIKey = gKey
+	} else if envGKey := os.Getenv("GROQ_API_KEY"); envGKey != "" {
+		cfg.STTGroqAPIKey = envGKey
+	}
+
+	if gModel := lookupProp(props, "stt.groq_model", "groq_model", "stt_groq_model"); gModel != "" {
+		cfg.STTGroqModel = gModel
+	}
+
+	if oURL := lookupProp(props, "stt.openai_base_url", "openai_base_url", "stt_openai_base_url"); oURL != "" {
+		cfg.STTOpenAIBaseURL = oURL
+	}
+
+	if vocab := lookupProp(props, "stt.prompt_vocabulary", "prompt_vocabulary", "stt_prompt_vocabulary"); vocab != "" {
+		cfg.STTPromptVocabulary = vocab
+	}
+
+	// STT language: defaults to "en", if empty in config or set to "auto" -> auto-detect
+	if lang, ok := lookupPropPresence(props, "stt.language", "stt_language", "language"); ok {
+		trimmed := strings.TrimSpace(lang)
+		lower := strings.ToLower(trimmed)
+		if lower == "auto" || lower == "none" || trimmed == "" {
+			cfg.STTLanguage = ""
+		} else {
+			cfg.STTLanguage = lower
+		}
+	}
+
 	if cacheStr := lookupProp(props, "system_cache_hours", "system_info_cache_hours", "system_cache_ttl", "cache_ttl"); cacheStr != "" {
 		if hours, err := strconv.Atoi(cacheStr); err == nil && hours > 0 {
 			cfg.SystemCacheHours = hours
@@ -428,6 +505,15 @@ func lookupProp(props map[string]string, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func lookupPropPresence(props map[string]string, keys ...string) (string, bool) {
+	for _, k := range keys {
+		if val, ok := props[strings.ToLower(k)]; ok {
+			return strings.TrimSpace(val), true
+		}
+	}
+	return "", false
 }
 
 // parseINIFile parses a simple INI file into a key-value map.
