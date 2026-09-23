@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"ed-assist/internal/gemini"
+	"ed-assist/internal/llm"
 )
 
 // Config holds runtime configuration options for ed-assist.
@@ -34,13 +34,20 @@ type Config struct {
 	LogLevel       string        `json:"log_level"`
 	LogFile        string        `json:"log_file"`
 
-	// Web client & Gemini assistant settings
+	// Web client & AI assistant settings
 	WebAddr           string `json:"web_addr"`            // e.g. "127.0.0.1:3000"
+	AIProvider        string `json:"ai_provider"`         // "gemini" or "openai" (OpenAI-compatible)
 	GeminiAPIKey      string `json:"gemini_api_key"`      // or GEMINI_API_KEY env
 	GeminiModel       string `json:"gemini_model"`        // default: "gemini-flash-lite-latest"
+	GeminiBaseURL     string `json:"gemini_base_url"`     // optional override
+	OpenAIAPIKey      string `json:"openai_api_key"`      // or OPENAI_API_KEY env
+	OpenAIModel       string `json:"openai_model"`        // default: "gpt-4o-mini"
+	OpenAIBaseURL     string `json:"openai_base_url"`     // default: "https://api.openai.com/v1"
 	GeminiMCPMode     string `json:"gemini_mcp_mode"`     // "http" or "stdio" (or "inprocess")
 	GeminiMCPEndpoint string `json:"gemini_mcp_endpoint"` // e.g. "http://127.0.0.1:8080/sse" or path to binary for stdio
 	SystemPrompt      string `json:"system_prompt"`       // custom system prompt (empty uses default COVAS prompt)
+	MaxToolRounds     int    `json:"max_tool_rounds"`     // maximum rounds for AI tool calling loop (default: 10)
+	AutoTimeContext   bool   `json:"auto_time_context"`   // automatically inject ship chronometer/time into prompt (default: true)
 
 	// Noise gate / VOX voice recording settings
 	VoiceGateThreshold   int  `json:"voice_gate_threshold"`   // default: 40 (0-100 percent)
@@ -72,10 +79,15 @@ func DefaultConfig() *Config {
 		RetryDelay:     25 * time.Millisecond,
 		LogLevel:       "info",
 		WebAddr:        "127.0.0.1:3000",
+		AIProvider:     "gemini",
 		GeminiModel:    "gemini-flash-lite-latest",
+		OpenAIModel:    "gpt-4o-mini",
+		OpenAIBaseURL:  "https://api.openai.com/v1",
 		GeminiMCPMode:  "http",
 		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
-		SystemPrompt:   gemini.DefaultSystemPrompt,
+		SystemPrompt:   llm.DefaultSystemPrompt,
+		MaxToolRounds:  10,
+		AutoTimeContext: true,
 		VoiceGateThreshold:   40,
 		VoiceSilenceMs:       2000,
 		VoiceEchoProtection: true,
@@ -255,14 +267,74 @@ func Load(configFileOverride string) (*Config, error) {
 		}
 	}
 
-	if key := lookupProp(props, "gemini_api_key", "api_key", "gemini_key"); key != "" {
+	// AI Provider selection
+	if provider := lookupProp(props, "ai_provider", "provider", "model_provider", "llm_provider"); provider != "" {
+		pLower := strings.ToLower(provider)
+		if pLower == "openai" || pLower == "openai-compatible" || pLower == "deepseek" || pLower == "ollama" || pLower == "groq" || pLower == "lmstudio" {
+			cfg.AIProvider = "openai"
+		} else if pLower == "gemini" {
+			cfg.AIProvider = "gemini"
+		}
+	}
+
+	// Gemini configuration
+	if key := lookupProp(props, "gemini_api_key", "gemini_key"); key != "" {
 		cfg.GeminiAPIKey = key
 	} else if envKey := os.Getenv("GEMINI_API_KEY"); envKey != "" {
 		cfg.GeminiAPIKey = envKey
 	}
 
-	if model := lookupProp(props, "gemini_model", "model"); model != "" {
+	if model := lookupProp(props, "gemini_model"); model != "" {
 		cfg.GeminiModel = model
+	}
+
+	if baseURL := lookupProp(props, "gemini_base_url", "gemini_endpoint"); baseURL != "" {
+		cfg.GeminiBaseURL = baseURL
+	}
+
+	// OpenAI / OpenAI-compatible configuration
+	if key := lookupProp(props, "openai_api_key", "openai_key"); key != "" {
+		cfg.OpenAIAPIKey = key
+	} else if envKey := os.Getenv("OPENAI_API_KEY"); envKey != "" {
+		cfg.OpenAIAPIKey = envKey
+	}
+
+	if model := lookupProp(props, "openai_model", "deepseek_model"); model != "" {
+		cfg.OpenAIModel = model
+	}
+
+	if baseURL := lookupProp(props, "openai_base_url", "openai_endpoint", "deepseek_base_url"); baseURL != "" {
+		cfg.OpenAIBaseURL = baseURL
+	}
+
+	// Generic model / api_key overrides based on selected provider
+	if aiKey := lookupProp(props, "api_key", "ai_api_key", "ai_key"); aiKey != "" {
+		if cfg.AIProvider == "openai" {
+			cfg.OpenAIAPIKey = aiKey
+		} else {
+			cfg.GeminiAPIKey = aiKey
+		}
+	}
+	if aiModel := lookupProp(props, "model", "ai_model"); aiModel != "" {
+		if cfg.AIProvider == "openai" {
+			cfg.OpenAIModel = aiModel
+		} else {
+			cfg.GeminiModel = aiModel
+		}
+	}
+	if aiEndpoint := lookupProp(props, "ai_endpoint", "ai_base_url"); aiEndpoint != "" {
+		if cfg.AIProvider == "openai" {
+			cfg.OpenAIBaseURL = aiEndpoint
+		} else {
+			cfg.GeminiBaseURL = aiEndpoint
+		}
+	}
+
+	// Auto-detect provider if not explicitly given
+	if lookupProp(props, "ai_provider", "provider", "model_provider", "llm_provider") == "" {
+		if (cfg.OpenAIAPIKey != "" || lookupProp(props, "openai_model", "openai_base_url") != "") && cfg.GeminiAPIKey == "" {
+			cfg.AIProvider = "openai"
+		}
 	}
 
 	if mcpMode := lookupProp(props, "gemini_mcp_mode", "mcp_client_mode", "gemini_mcp_transport"); mcpMode != "" {
@@ -294,6 +366,17 @@ func Load(configFileOverride string) (*Config, error) {
 		} else {
 			slog.Warn("could not read system_prompt_file", "path", expanded, "error", err)
 		}
+	}
+
+	if roundsStr := lookupProp(props, "max_tool_rounds", "max_rounds", "tool_rounds", "max_turns"); roundsStr != "" {
+		if r, err := strconv.Atoi(roundsStr); err == nil && r > 0 {
+			cfg.MaxToolRounds = r
+		}
+	}
+
+	if timeStr := lookupProp(props, "auto_time_context", "auto_time_injection", "time_injection", "inject_time", "time_context"); timeStr != "" {
+		timeLower := strings.ToLower(timeStr)
+		cfg.AutoTimeContext = timeLower == "true" || timeLower == "1" || timeLower == "yes" || timeLower == "on"
 	}
 
 	if threshStr := lookupProp(props, "voice_gate_threshold", "gate_threshold", "noise_gate_threshold", "vox_threshold"); threshStr != "" {

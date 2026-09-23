@@ -646,6 +646,9 @@
     let manualRecorder = null;
     let manualChunks = [];
     let manualStream = null;
+    let manualAudioCtx = null;
+    let manualAnalyser = null;
+    let manualAnimFrame = null;
 
     // TTS Read Aloud state
     let ttsActive = localStorage.getItem('covas_tts_enabled') === 'true';
@@ -864,6 +867,14 @@
 
           manualRecorder = new MediaRecorder(manualStream, options);
 
+          // Audio meter for manual recording (visual feedback on noise gate bar)
+          manualAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const source = manualAudioCtx.createMediaStreamSource(manualStream);
+          manualAnalyser = manualAudioCtx.createAnalyser();
+          manualAnalyser.fftSize = 512;
+          manualAnalyser.smoothingTimeConstant = 0.2;
+          source.connect(manualAnalyser);
+
           manualRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
               manualChunks.push(event.data);
@@ -884,6 +895,7 @@
 
             if (manualStream) {
               manualStream.getTracks().forEach(track => track.stop());
+              manualStream = null;
             }
           };
 
@@ -891,21 +903,61 @@
           manualRecording = true;
           micBtn.classList.add('recording');
           micLabel.textContent = 'STOP';
+          voxSliderBox.className = 'vox-slider-container recording';
+          voxTag.textContent = 'REC';
+          voxTag.className = 'vox-status-tag rec';
           footerStatus.textContent = 'Recording manual voice... Click STOP to transmit.';
+
+          function monitorManualAudio() {
+            if (!manualRecording || !manualAnalyser) return;
+            const dataArray = new Uint8Array(manualAnalyser.frequencyBinCount);
+            manualAnalyser.getByteTimeDomainData(dataArray);
+
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              const val = (dataArray[i] - 128) / 128;
+              sum += val * val;
+            }
+            const rms = Math.sqrt(sum / dataArray.length);
+            const currentVolume = Math.min(100, Math.round(rms * 450));
+            voxMeter.style.width = currentVolume + '%';
+
+            manualAnimFrame = requestAnimationFrame(monitorManualAudio);
+          }
+          monitorManualAudio();
         } catch (err) {
           alert('Microphone access error: ' + err.message);
           footerStatus.textContent = 'Microphone access denied';
         }
       } else {
-        if (manualRecorder && manualRecorder.state !== 'inactive') {
-          manualRecorder.stop();
-        }
-        manualRecording = false;
-        micBtn.classList.remove('recording');
-        micLabel.textContent = 'REC';
+        stopManualRecording();
         footerStatus.textContent = 'Encoding voice input...';
       }
     });
+
+    function stopManualRecording() {
+      if (manualAnimFrame) {
+        cancelAnimationFrame(manualAnimFrame);
+        manualAnimFrame = null;
+      }
+      if (manualAudioCtx) {
+        manualAudioCtx.close().catch(() => {});
+        manualAudioCtx = null;
+      }
+      manualAnalyser = null;
+
+      if (manualRecorder && manualRecorder.state !== 'inactive') {
+        manualRecorder.stop();
+      }
+      manualRecording = false;
+      micBtn.classList.remove('recording');
+      micLabel.textContent = 'REC';
+
+      voxMeter.style.width = '0%';
+      voxSliderBox.className = 'vox-slider-container idle';
+      voxTag.textContent = voxActive ? 'LISTENING' : 'VOX OFF';
+      voxTag.className = voxActive ? 'vox-status-tag active' : 'vox-status-tag';
+    }
 
     // 2. VOX Noise Gate Automatic Voice Recording
     voxBtn.addEventListener('click', () => {
@@ -918,12 +970,7 @@
 
     async function startVox() {
       if (manualRecording) {
-        if (manualRecorder && manualRecorder.state !== 'inactive') {
-          manualRecorder.stop();
-        }
-        manualRecording = false;
-        micBtn.classList.remove('recording');
-        micLabel.textContent = 'REC';
+        stopManualRecording();
       }
 
       try {

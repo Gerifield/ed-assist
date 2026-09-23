@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"ed-assist/internal/config"
-	"ed-assist/internal/gemini"
 	"ed-assist/internal/input"
+	"ed-assist/internal/llm"
 	"ed-assist/internal/mcpserver"
 	"ed-assist/internal/reader"
 	"ed-assist/internal/store"
@@ -27,13 +27,18 @@ func main() {
 	// Parse CLI flags
 	configFileFlag := flag.String("config", "", "Path to config.ini file")
 	webAddrFlag := flag.String("addr", "", "Listen address for web UI (default: 127.0.0.1:3000)")
+	providerFlag := flag.String("provider", "", "AI provider: gemini or openai (default: gemini)")
 	mcpModeFlag := flag.String("mcp-mode", "", "MCP transport mode: http, stdio, or inprocess (default: inprocess/http)")
 	mcpEndpointFlag := flag.String("mcp-endpoint", "", "MCP HTTP endpoint (e.g. http://127.0.0.1:8080/sse) or path to binary for stdio")
-	apiKeyFlag := flag.String("api-key", "", "Gemini API key (or GEMINI_API_KEY env)")
-	modelFlag := flag.String("model", "", "Gemini model (default: gemini-flash-lite-latest)")
+	apiKeyFlag := flag.String("api-key", "", "AI API key (Gemini or OpenAI depending on provider)")
+	modelFlag := flag.String("model", "", "Model name (Gemini or OpenAI)")
+	openaiKeyFlag := flag.String("openai-key", "", "OpenAI / OpenAI-compatible API key")
+	openaiModelFlag := flag.String("openai-model", "", "OpenAI / OpenAI-compatible model (e.g. gpt-4o-mini, deepseek-chat)")
+	openaiEndpointFlag := flag.String("openai-endpoint", "", "OpenAI-compatible base URL (e.g. https://api.openai.com/v1, https://api.deepseek.com/v1)")
 	statusFileFlag := flag.String("status", "", "Override path to Status.json")
 	dbPathFlag := flag.String("db", "", "Path to SQLite database file")
 	cacheHoursFlag := flag.Int("cache-hours", 0, "System info and external API cache TTL in hours (default: 8)")
+	maxToolRoundsFlag := flag.Int("max-tool-rounds", 0, "Maximum rounds for AI tool calling loop (default: 10)")
 	logLevelFlag := flag.String("loglevel", "info", "Log level (debug, info, warn, error)")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	flag.Parse()
@@ -54,17 +59,37 @@ func main() {
 	if *webAddrFlag != "" {
 		cfg.WebAddr = *webAddrFlag
 	}
+	if *providerFlag != "" {
+		cfg.AIProvider = *providerFlag
+	}
 	if *mcpModeFlag != "" {
 		cfg.GeminiMCPMode = *mcpModeFlag
 	}
 	if *mcpEndpointFlag != "" {
 		cfg.GeminiMCPEndpoint = *mcpEndpointFlag
 	}
+	if *openaiKeyFlag != "" {
+		cfg.OpenAIAPIKey = *openaiKeyFlag
+	}
+	if *openaiModelFlag != "" {
+		cfg.OpenAIModel = *openaiModelFlag
+	}
+	if *openaiEndpointFlag != "" {
+		cfg.OpenAIBaseURL = *openaiEndpointFlag
+	}
 	if *apiKeyFlag != "" {
-		cfg.GeminiAPIKey = *apiKeyFlag
+		if strings.ToLower(cfg.AIProvider) == "openai" {
+			cfg.OpenAIAPIKey = *apiKeyFlag
+		} else {
+			cfg.GeminiAPIKey = *apiKeyFlag
+		}
 	}
 	if *modelFlag != "" {
-		cfg.GeminiModel = *modelFlag
+		if strings.ToLower(cfg.AIProvider) == "openai" {
+			cfg.OpenAIModel = *modelFlag
+		} else {
+			cfg.GeminiModel = *modelFlag
+		}
 	}
 	if *statusFileFlag != "" {
 		cfg.StatusFilePath = *statusFileFlag
@@ -79,6 +104,9 @@ func main() {
 	if *cacheHoursFlag > 0 {
 		cfg.SystemCacheHours = *cacheHoursFlag
 		cfg.SystemCacheTTL = time.Duration(*cacheHoursFlag) * time.Hour
+	}
+	if *maxToolRoundsFlag > 0 {
+		cfg.MaxToolRounds = *maxToolRoundsFlag
 	}
 
 	// Set up logger
@@ -186,25 +214,38 @@ func main() {
 		}
 	}
 
-	// Create Gemini client with MCP tools attached
-	var optsList []gemini.Option
-	if bridge != nil {
-		optsList = append(optsList, gemini.WithMCPCaller(bridge))
+	// Create AI client (Gemini or OpenAI-compatible)
+	aiClient, err := llm.NewClientFromConfig(llm.ProviderConfig{
+		Provider:      cfg.AIProvider,
+		GeminiKey:     cfg.GeminiAPIKey,
+		GeminiModel:   cfg.GeminiModel,
+		GeminiBaseURL: cfg.GeminiBaseURL,
+		OpenAIKey:     cfg.OpenAIAPIKey,
+		OpenAIModel:   cfg.OpenAIModel,
+		OpenAIBaseURL: cfg.OpenAIBaseURL,
+		SystemPrompt:    cfg.SystemPrompt,
+		MaxToolRounds:   cfg.MaxToolRounds,
+		AutoTimeContext: cfg.AutoTimeContext,
+		MCPCaller:       bridge,
+	})
+	if err != nil {
+		slog.Error("failed initializing AI client", "error", err)
+		os.Exit(1)
 	}
-	if strings.TrimSpace(cfg.SystemPrompt) != "" {
-		optsList = append(optsList, gemini.WithSystemPrompt(cfg.SystemPrompt))
-	}
-	if cfg.SystemPrompt != "" && cfg.SystemPrompt != gemini.DefaultSystemPrompt {
+
+	if cfg.SystemPrompt != "" && cfg.SystemPrompt != llm.DefaultSystemPrompt {
 		slog.Info("using custom system prompt for COVAS", "chars", len(cfg.SystemPrompt))
 	}
-	geminiClient := gemini.NewClient(cfg.GeminiAPIKey, cfg.GeminiModel, optsList...)
+
+	modelDisplayName := aiClient.ModelName()
+	slog.Info("AI copilot initialized", "provider", aiClient.Provider(), "model", modelDisplayName)
 
 	// Create and start web server
 	webServer := web.NewServer(
 		cfg.WebAddr,
-		geminiClient,
+		aiClient,
 		bridge,
-		cfg.GeminiModel,
+		modelDisplayName,
 		cfg.VoiceGateThreshold,
 		cfg.VoiceSilenceMs,
 		web.WithEchoProtection(cfg.VoiceEchoProtection),

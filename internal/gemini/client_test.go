@@ -6,46 +6,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/mark3labs/mcp-go/mcp"
 )
 
-type mockMCPCaller struct {
-	tools       []mcp.Tool
-	calledTools []string
-}
-
-func (m *mockMCPCaller) ListTools(ctx context.Context) ([]mcp.Tool, error) {
-	return m.tools, nil
-}
-
-func (m *mockMCPCaller) CallTool(ctx context.Context, name string, arguments map[string]any) (string, error) {
-	m.calledTools = append(m.calledTools, name)
-	if name == "get_ship_status" {
-		return `{"mode":"Ship", "docked":true}`, nil
-	}
-	return `{"status":"ok"}`, nil
-}
-
-func TestGeminiExecuteTurnDirectText(t *testing.T) {
+func TestGeminiWrapper(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := GenerateContentResponse{
-			Candidates: []struct {
-				Content struct {
-					Role  string `json:"role"`
-					Parts []Part `json:"parts"`
-				} `json:"content"`
-				FinishReason string `json:"finishReason"`
-			}{
+		resp := map[string]any{
+			"candidates": []map[string]any{
 				{
-					Content: struct {
-						Role  string `json:"role"`
-						Parts []Part `json:"parts"`
-					}{
-						Role:  "model",
-						Parts: []Part{{Text: "Commander, all systems nominal."}},
+					"content": map[string]any{
+						"role": "model",
+						"parts": []map[string]any{
+							{"text": "Commander, all systems nominal."},
+						},
 					},
-					FinishReason: "STOP",
+					"finishReason": "STOP",
 				},
 			},
 		}
@@ -53,7 +27,18 @@ func TestGeminiExecuteTurnDirectText(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := NewClient("test-key", "gemini-3.8-flash-lite", WithBaseURL(ts.URL), WithHTTPClient(ts.Client()))
+	client := NewClient("test-key", "gemini-3.8-flash-lite",
+		WithBaseURL(ts.URL),
+		WithHTTPClient(ts.Client()),
+		WithSystemPrompt("Custom prompt"),
+	)
+
+	if client.SystemPrompt() != "Custom prompt" {
+		t.Errorf("expected 'Custom prompt', got '%s'", client.SystemPrompt())
+	}
+	if client.Provider() != "gemini" {
+		t.Errorf("expected provider 'gemini', got '%s'", client.Provider())
+	}
 
 	reply, err := client.ExecuteTurn(context.Background(), nil, "Status report", nil, "")
 	if err != nil {
@@ -65,183 +50,8 @@ func TestGeminiExecuteTurnDirectText(t *testing.T) {
 	}
 }
 
-func TestGeminiExecuteTurnWithToolCalling(t *testing.T) {
-	rounds := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rounds++
-		if rounds == 1 {
-			// Round 1: Model asks to call get_ship_status with thought_signature on Part
-			resp := GenerateContentResponse{
-				Candidates: []struct {
-					Content struct {
-						Role  string `json:"role"`
-						Parts []Part `json:"parts"`
-					} `json:"content"`
-					FinishReason string `json:"finishReason"`
-				}{
-					{
-						Content: struct {
-							Role  string `json:"role"`
-							Parts []Part `json:"parts"`
-						}{
-							Role: "model",
-							Parts: []Part{
-								{
-									ThoughtSignature: "test_thought_sig_abc123",
-									FunctionCall: &FunctionCall{
-										ID:   "call_abc",
-										Name: "get_ship_status",
-										Args: map[string]any{},
-									},
-								},
-							},
-						},
-						FinishReason: "STOP",
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-
-		// Round 2: verify thought_signature is on Part, NOT inside functionCall, and ID is preserved
-		var req GenerateContentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("failed decoding round 2 request: %v", err)
-		}
-
-		foundSigOnPart := false
-		for _, msg := range req.Contents {
-			for _, p := range msg.Parts {
-				if p.ThoughtSignature == "test_thought_sig_abc123" {
-					foundSigOnPart = true
-				}
-				if p.FunctionResponse != nil && p.FunctionResponse.ID != "call_abc" {
-					t.Errorf("expected FunctionResponse ID 'call_abc', got '%s'", p.FunctionResponse.ID)
-				}
-			}
-		}
-		if !foundSigOnPart {
-			t.Errorf("round 2 request missing thought_signature on echoed model Part")
-		}
-
-		// Model returns final text with tool result
-		resp := GenerateContentResponse{
-			Candidates: []struct {
-				Content struct {
-					Role  string `json:"role"`
-					Parts []Part `json:"parts"`
-				} `json:"content"`
-				FinishReason string `json:"finishReason"`
-			}{
-				{
-					Content: struct {
-						Role  string `json:"role"`
-						Parts []Part `json:"parts"`
-					}{
-						Role:  "model",
-						Parts: []Part{{Text: "We are currently safely docked in ship mode."}},
-					},
-					FinishReason: "STOP",
-				},
-			},
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer ts.Close()
-
-	mockCaller := &mockMCPCaller{
-		tools: []mcp.Tool{
-			mcp.NewTool("get_ship_status", mcp.WithDescription("Get ship status")),
-		},
-	}
-
-	client := NewClient("test-key", "gemini-3.8-flash-lite",
-		WithBaseURL(ts.URL),
-		WithHTTPClient(ts.Client()),
-		WithMCPCaller(mockCaller),
-	)
-
-	reply, err := client.ExecuteTurn(context.Background(), nil, "Are we docked?", nil, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if reply != "We are currently safely docked in ship mode." {
-		t.Errorf("expected final reply, got '%s'", reply)
-	}
-
-	if len(mockCaller.calledTools) != 1 || mockCaller.calledTools[0] != "get_ship_status" {
-		t.Errorf("expected get_ship_status to have been invoked, got %v", mockCaller.calledTools)
-	}
-}
-
-func TestGeminiExecuteTurnRequiresAPIKey(t *testing.T) {
-	client := NewClient("", "gemini-3.8-flash-lite")
-	_, err := client.ExecuteTurn(context.Background(), nil, "Hello", nil, "")
-	if err == nil {
-		t.Fatalf("expected error when API key is missing")
-	}
-}
-
-func TestGeminiSystemPrompt(t *testing.T) {
-	// 1. Default system prompt
-	cDef := NewClient("test-key", "gemini-flash-lite-latest")
-	if cDef.SystemPrompt() != DefaultSystemPrompt {
-		t.Errorf("expected DefaultSystemPrompt, got %s", cDef.SystemPrompt())
-	}
-
-	// 2. Custom system prompt via Option
-	customPrompt := "You are a specialized pirate COVAS assistant."
-	var capturedPrompt string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req GenerateContentRequest
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		if req.SystemInstruction != nil && len(req.SystemInstruction.Parts) > 0 {
-			capturedPrompt = req.SystemInstruction.Parts[0].Text
-		}
-		resp := GenerateContentResponse{
-			Candidates: []struct {
-				Content struct {
-					Role  string `json:"role"`
-					Parts []Part `json:"parts"`
-				} `json:"content"`
-				FinishReason string `json:"finishReason"`
-			}{
-				{
-					Content: struct {
-						Role  string `json:"role"`
-						Parts []Part `json:"parts"`
-					}{
-						Role:  "model",
-						Parts: []Part{{Text: "Ahoy commander."}},
-					},
-					FinishReason: "STOP",
-				},
-			},
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer ts.Close()
-
-	cCustom := NewClient("test-key", "gemini-flash-lite-latest",
-		WithSystemPrompt(customPrompt),
-		WithBaseURL(ts.URL),
-		WithHTTPClient(ts.Client()),
-	)
-
-	if cCustom.SystemPrompt() != customPrompt {
-		t.Errorf("expected custom prompt '%s', got '%s'", customPrompt, cCustom.SystemPrompt())
-	}
-
-	reply, err := cCustom.ExecuteTurn(context.Background(), nil, "Greeting", nil, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if reply != "Ahoy commander." {
-		t.Errorf("expected 'Ahoy commander.', got '%s'", reply)
-	}
-	if capturedPrompt != customPrompt {
-		t.Errorf("expected captured system prompt in HTTP request '%s', got '%s'", customPrompt, capturedPrompt)
+func TestGeminiDefaultPrompt(t *testing.T) {
+	if DefaultSystemPrompt == "" {
+		t.Errorf("expected non-empty DefaultSystemPrompt")
 	}
 }

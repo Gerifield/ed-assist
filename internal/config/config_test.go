@@ -362,3 +362,149 @@ system_prompt =
 	}
 }
 
+func TestLoadAIProviderConfig(t *testing.T) {
+	// 1. Default config has Gemini provider
+	cfgDef := DefaultConfig()
+	if cfgDef.AIProvider != "gemini" {
+		t.Errorf("expected default AIProvider gemini, got %s", cfgDef.AIProvider)
+	}
+
+	// 2. Explicit OpenAI provider config
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+	content := `
+[general]
+ai_provider = openai
+openai_api_key = sk-custom-123
+openai_model = gpt-4o
+openai_base_url = https://api.openai.com/v1
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AIProvider != "openai" {
+		t.Errorf("expected AIProvider openai, got %s", cfg.AIProvider)
+	}
+	if cfg.OpenAIAPIKey != "sk-custom-123" {
+		t.Errorf("expected OpenAIAPIKey sk-custom-123, got %s", cfg.OpenAIAPIKey)
+	}
+	if cfg.OpenAIModel != "gpt-4o" {
+		t.Errorf("expected OpenAIModel gpt-4o, got %s", cfg.OpenAIModel)
+	}
+	if cfg.OpenAIBaseURL != "https://api.openai.com/v1" {
+		t.Errorf("expected OpenAIBaseURL https://api.openai.com/v1, got %s", cfg.OpenAIBaseURL)
+	}
+
+	// 3. DeepSeek alias maps to openai provider
+	deepseekContent := `
+[general]
+ai_provider = deepseek
+openai_api_key = sk-deepseek-key
+openai_model = deepseek-chat
+openai_base_url = https://api.deepseek.com/v1
+`
+	if err := os.WriteFile(iniPath, []byte(deepseekContent), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AIProvider != "openai" {
+		t.Errorf("expected deepseek to map to openai provider, got %s", cfg.AIProvider)
+	}
+	if cfg.OpenAIModel != "deepseek-chat" {
+		t.Errorf("expected deepseek-chat, got %s", cfg.OpenAIModel)
+	}
+
+	// 4. Auto-detect openai when openai_api_key is given and ai_provider is omitted
+	autoDetectContent := `
+[general]
+openai_api_key = sk-auto-detect
+openai_model = llama3.1
+openai_base_url = http://localhost:11434/v1
+`
+	if err := os.WriteFile(iniPath, []byte(autoDetectContent), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AIProvider != "openai" {
+		t.Errorf("expected auto-detected provider to be openai, got %s", cfg.AIProvider)
+	}
+	if cfg.OpenAIModel != "llama3.1" {
+		t.Errorf("expected model llama3.1, got %s", cfg.OpenAIModel)
+	}
+	if cfg.OpenAIBaseURL != "http://localhost:11434/v1" {
+		t.Errorf("expected base URL http://localhost:11434/v1, got %s", cfg.OpenAIBaseURL)
+	}
+}
+
+func TestLoadMaxToolRounds(t *testing.T) {
+	// Test default
+	def := DefaultConfig()
+	if def.MaxToolRounds != 10 {
+		t.Errorf("expected default MaxToolRounds to be 10, got %d", def.MaxToolRounds)
+	}
+
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+max_tool_rounds = 5
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.MaxToolRounds != 5 {
+		t.Errorf("expected MaxToolRounds 5, got %d", cfg.MaxToolRounds)
+	}
+}
+
+func TestLoadAutoTimeContext(t *testing.T) {
+	// Default should be true
+	def := DefaultConfig()
+	if !def.AutoTimeContext {
+		t.Errorf("expected default AutoTimeContext to be true")
+	}
+
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+auto_time_context = false
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AutoTimeContext {
+		t.Errorf("expected AutoTimeContext to be false, got true")
+	}
+}
+
+
+
+
