@@ -283,7 +283,7 @@ func Load(configFileOverride string) (*Config, error) {
 	}
 
 	// AI Provider selection
-	if provider := lookupProp(props, "ai_provider", "provider", "model_provider", "llm_provider"); provider != "" {
+	if provider := lookupProp(props, "ai.provider", "ai.ai_provider", "ai_provider", "provider", "model_provider", "llm_provider"); provider != "" {
 		pLower := strings.ToLower(provider)
 		if pLower == "openai" || pLower == "openai-compatible" || pLower == "deepseek" || pLower == "ollama" || pLower == "groq" || pLower == "lmstudio" {
 			cfg.AIProvider = "openai"
@@ -346,7 +346,7 @@ func Load(configFileOverride string) (*Config, error) {
 	}
 
 	// Auto-detect provider if not explicitly given
-	if lookupProp(props, "ai_provider", "provider", "model_provider", "llm_provider") == "" {
+	if lookupProp(props, "ai.provider", "ai.ai_provider", "ai_provider", "provider", "model_provider", "llm_provider") == "" {
 		if (cfg.OpenAIAPIKey != "" || lookupProp(props, "openai_model", "openai_base_url") != "") && cfg.GeminiAPIKey == "" {
 			cfg.AIProvider = "openai"
 		}

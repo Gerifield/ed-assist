@@ -505,6 +505,37 @@ auto_time_context = false
 	}
 }
 
+func TestLoadAISection(t *testing.T) {
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[ai]
+provider = openai
+openai_api_key = sk-ai-section-test
+openai_model = gpt-4o-mini
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AIProvider != "openai" {
+		t.Errorf("expected AIProvider to be openai, got %s", cfg.AIProvider)
+	}
+	if cfg.OpenAIAPIKey != "sk-ai-section-test" {
+		t.Errorf("expected OpenAIAPIKey to be sk-ai-section-test, got %s", cfg.OpenAIAPIKey)
+	}
+	if cfg.OpenAIModel != "gpt-4o-mini" {
+		t.Errorf("expected OpenAIModel to be gpt-4o-mini, got %s", cfg.OpenAIModel)
+	}
+}
+
+
 
 
 

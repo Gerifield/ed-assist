@@ -57,13 +57,9 @@ key_hold_ms = 80
 ; If empty, auto-detects from %LOCALAPPDATA%\Frontier Developments\Elite Dangerous\Options\Bindings
 bindings_path =
 
-; Web Cockpit Assistant & AI Configuration (for ed-assist-web)
+; Web Cockpit Assistant (for ed-assist-web)
 ; Web UI listen address and port (default: 127.0.0.1:3000)
 web_addr = 127.0.0.1:3000
-
-; AI Provider selection: "gemini" (default) or "openai" (OpenAI-compatible)
-; "openai" mode supports OpenAI, DeepSeek, Groq, Ollama, LM Studio, OpenRouter, etc.
-ai_provider = gemini
 
 ; Audio input processing strategy:
 ; transcribe = pre-transcribe voice audio to text via STT, then send pure text prompt to AI (default)
@@ -86,7 +82,11 @@ openai_base_url = https://api.groq.com/openai/v1
 prompt_vocabulary = FSD, Frame Shift Drive, SCB, SRV, COVAS, Chaff, Heatsink, Pips, Limpet, Supercruise, Coriolis, Thargoid, Witchspace
 
 [ai]
-; --- Google Gemini Configuration (when ai_provider = gemini) ---
+; AI Provider selection: "gemini" (default) or "openai" (OpenAI-compatible)
+; "openai" mode supports OpenAI, DeepSeek, Groq, Ollama, LM Studio, OpenRouter, etc.
+provider = gemini
+
+; --- Google Gemini Configuration (when provider = gemini) ---
 ; Google Gemini API key (or export GEMINI_API_KEY environment variable)
 gemini_api_key = 
 
