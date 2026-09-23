@@ -50,6 +50,9 @@ func TestTranscribeSuccess(t *testing.T) {
 		if r.FormValue("prompt") != "FSD, SRV, COVAS" {
 			t.Errorf("expected prompt FSD, SRV, COVAS, got %s", r.FormValue("prompt"))
 		}
+		if r.FormValue("language") != "en" {
+			t.Errorf("expected language en, got %s", r.FormValue("language"))
+		}
 		if r.FormValue("temperature") != "0.0" {
 			t.Errorf("expected temperature 0.0, got %s", r.FormValue("temperature"))
 		}
@@ -86,6 +89,7 @@ func TestTranscribeSuccess(t *testing.T) {
 		Model:            "whisper-large-v3-turbo",
 		BaseURL:          mockServer.URL,
 		PromptVocabulary: "FSD, SRV, COVAS",
+		Language:         "en",
 		HTTPClient:       mockServer.Client(),
 	})
 	if err != nil {

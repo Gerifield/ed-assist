@@ -248,6 +248,9 @@ func main() {
 		if sttKey == "" {
 			sttKey = cfg.OpenAIAPIKey
 		}
+		if sttKey == "" && (cfg.STTBackend == "groq" || cfg.STTBackend == "openai") {
+			slog.Warn("STT enabled but neither groq_api_key nor openai_api_key configured; transcription may fail unless using a local backend", "backend", cfg.STTBackend)
+		}
 		t, err := stt.NewTranscriber(stt.Config{
 			Enabled:          cfg.STTEnabled,
 			Backend:          cfg.STTBackend,
@@ -255,12 +258,13 @@ func main() {
 			Model:            cfg.STTGroqModel,
 			BaseURL:          cfg.STTOpenAIBaseURL,
 			PromptVocabulary: cfg.STTPromptVocabulary,
+			Language:         cfg.STTLanguage,
 		})
 		if err != nil {
 			slog.Warn("failed initializing STT transcriber", "error", err)
 		} else {
 			transcriber = t
-			slog.Info("STT transcriber initialized", "backend", cfg.STTBackend, "audio_input_mode", cfg.AudioInputMode)
+			slog.Info("STT transcriber initialized", "backend", cfg.STTBackend, "audio_input_mode", cfg.AudioInputMode, "language", cfg.STTLanguage)
 		}
 	}
 

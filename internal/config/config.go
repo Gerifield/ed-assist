@@ -62,6 +62,7 @@ type Config struct {
 	STTGroqModel        string `json:"stt_groq_model"`         // default: "whisper-large-v3-turbo"
 	STTOpenAIBaseURL    string `json:"stt_openai_base_url"`     // default: "https://api.groq.com/openai/v1"
 	STTPromptVocabulary string `json:"stt_prompt_vocabulary"`  // Elite Dangerous prompt vocabulary for Whisper
+	STTLanguage         string `json:"stt_language"`           // STT language code: default "en", empty for auto-detect
 
 	// External API & System info cache settings
 	SystemCacheHours int           `json:"system_cache_hours"` // default: 8 (hours)
@@ -106,6 +107,7 @@ func DefaultConfig() *Config {
 		STTGroqModel:        "whisper-large-v3-turbo",
 		STTOpenAIBaseURL:    "https://api.groq.com/openai/v1",
 		STTPromptVocabulary: "FSD, Frame Shift Drive, SCB, SRV, COVAS, Chaff, Heatsink, Pips, Limpet, Supercruise, Coriolis, Thargoid, Witchspace",
+		STTLanguage:         "en",
 		SystemCacheHours:    8,
 		SystemCacheTTL:      8 * time.Hour,
 	}
@@ -446,6 +448,17 @@ func Load(configFileOverride string) (*Config, error) {
 		cfg.STTPromptVocabulary = vocab
 	}
 
+	// STT language: defaults to "en", if empty in config or set to "auto" -> auto-detect
+	if lang, ok := lookupPropPresence(props, "stt.language", "stt_language", "language"); ok {
+		trimmed := strings.TrimSpace(lang)
+		lower := strings.ToLower(trimmed)
+		if lower == "auto" || lower == "none" || trimmed == "" {
+			cfg.STTLanguage = ""
+		} else {
+			cfg.STTLanguage = lower
+		}
+	}
+
 	if cacheStr := lookupProp(props, "system_cache_hours", "system_info_cache_hours", "system_cache_ttl", "cache_ttl"); cacheStr != "" {
 		if hours, err := strconv.Atoi(cacheStr); err == nil && hours > 0 {
 			cfg.SystemCacheHours = hours
@@ -476,6 +489,15 @@ func lookupProp(props map[string]string, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func lookupPropPresence(props map[string]string, keys ...string) (string, bool) {
+	for _, k := range keys {
+		if val, ok := props[strings.ToLower(k)]; ok {
+			return strings.TrimSpace(val), true
+		}
+	}
+	return "", false
 }
 
 // parseINIFile parses a simple INI file into a key-value map.

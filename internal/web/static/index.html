@@ -667,6 +667,8 @@
     let voxAnimFrame = null;
     let lastVoiceTime = 0;
     let silenceTimeoutMs = 2000; // Default 2s silence timeout, updated from /api/info
+    let audioInputMode = 'transcribe';
+    let sttEnabled = false;
 
     // Load server status and config on startup
     fetch('/api/info')
@@ -675,6 +677,13 @@
         modelBadge.textContent = info.model || 'Gemini';
         mcpBadge.textContent = 'MCP: ' + (info.mcp_mode || 'direct');
         toolsBadge.textContent = (info.tool_count || 0) + ' Tools';
+
+        if (info.audio_input_mode) {
+          audioInputMode = info.audio_input_mode;
+        }
+        if (info.stt_enabled !== undefined) {
+          sttEnabled = Boolean(info.stt_enabled);
+        }
 
         if (info.voice_gate_threshold !== undefined && info.voice_gate_threshold > 0) {
           gateSlider.value = info.voice_gate_threshold;
@@ -784,7 +793,7 @@
       }
     }
 
-    async function sendPayload(text, audioB64 = null, audioMime = null) {
+    async function sendPayload(text, audioB64 = null, audioMime = null, existingMsgDiv = null, icon = '🎤') {
       if (!text && !audioB64) return;
 
       userInput.value = '';
@@ -807,6 +816,12 @@
         hideLoading();
 
         if (res.ok && data.reply) {
+          if (data.transcription && existingMsgDiv) {
+            const contentDiv = existingMsgDiv.querySelector('.msg-content');
+            if (contentDiv) {
+              contentDiv.innerHTML = `${icon} <strong>${formatMarkdown(data.transcription)}</strong>`;
+            }
+          }
           appendMessage('COVAS // Reply', data.reply, false);
           footerStatus.textContent = voxActive ? 'VOX Listening...' : 'Ready';
           if (ttsActive) {
@@ -824,6 +839,68 @@
         sendBtn.disabled = false;
         userInput.focus();
         scrollToBottom();
+      }
+    }
+
+    async function processAudioTransmission(sourceType, base64Data, mimeType) {
+      const icon = sourceType === 'VOX' ? '🎙️' : '🎤';
+      const sender = `COMMANDER (${sourceType})`;
+
+      // If in transcribe mode, transcribe via STT first
+      if (audioInputMode === 'transcribe') {
+        const msgDiv = appendMessage(sender, `${icon} <em>[Transcribing voice input...]</em>`, true);
+        const contentDiv = msgDiv.querySelector('.msg-content');
+        footerStatus.textContent = 'STT transcribing voice input...';
+
+        try {
+          const res = await fetch('/api/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audio_b64: base64Data,
+              audio_mime: mimeType
+            })
+          });
+
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            throw new Error(data.error || 'STT transcription failed');
+          }
+
+          const transcribed = (data.text || '').trim();
+          if (!transcribed) {
+            if (contentDiv) {
+              contentDiv.innerHTML = `${icon} <span style="color: var(--text-dim); font-style: italic;">[No speech detected]</span>`;
+            }
+            footerStatus.textContent = voxActive ? 'VOX Listening (no speech detected)...' : 'Ready (no speech detected)';
+            return;
+          }
+
+          if (contentDiv) {
+            contentDiv.innerHTML = `${icon} <strong>${formatMarkdown(transcribed)}</strong>`;
+          }
+          footerStatus.textContent = `Transcribed: "${transcribed}"`;
+
+          // If commander had partially typed text in the box, merge it
+          let promptText = transcribed;
+          const typed = userInput.value.trim();
+          if (typed) {
+            promptText = typed + ' ' + transcribed;
+            userInput.value = '';
+          }
+
+          await sendPayload(promptText);
+        } catch (err) {
+          console.error('STT failed:', err);
+          if (contentDiv) {
+            contentDiv.innerHTML = `${icon} <span style="color: #ff5555; font-style: italic;">[STT Error: ${err.message}]</span>`;
+          }
+          footerStatus.textContent = `STT Error: ${err.message}`;
+        }
+      } else {
+        // Native multimodal mode: send raw audio directly to /api/chat
+        const msgDiv = appendMessage(sender, `${icon} [Voice transmission sent]`, true);
+        await sendPayload('', base64Data, mimeType, msgDiv, icon);
       }
     }
 
@@ -881,7 +958,8 @@
             }
           };
 
-          manualRecorder.onstop = async () => {
+          manualRecorder.onstop = () => {
+            if (manualChunks.length === 0) return;
             const mimeType = manualRecorder.mimeType || 'audio/webm';
             const audioBlob = new Blob(manualChunks, { type: mimeType });
             
@@ -889,8 +967,7 @@
             reader.readAsDataURL(audioBlob);
             reader.onloadend = () => {
               const base64Data = reader.result.split(',')[1];
-              appendMessage('COMMANDER (VOICE)', '🎤 [Manual voice transmission sent]', true);
-              sendPayload('', base64Data, mimeType);
+              processAudioTransmission('VOICE', base64Data, mimeType);
             };
 
             if (manualStream) {
@@ -1105,8 +1182,7 @@
           reader.readAsDataURL(audioBlob);
           reader.onloadend = () => {
             const base64Data = reader.result.split(',')[1];
-            appendMessage('COMMANDER (VOX)', '🎙️ [VOX Auto-transmission sent]', true);
-            sendPayload('', base64Data, mimeType);
+            processAudioTransmission('VOX', base64Data, mimeType);
           };
         };
 

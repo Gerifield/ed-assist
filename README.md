@@ -32,6 +32,11 @@ A lightweight, cross-platform Go helper for **Elite Dangerous** that monitors, r
 - **Standalone Web Cockpit Assistant (COVAS)**:
   - Built-in self-hosted web HUD (`ed-assist-web`) with text and voice input.
   - Automatic VOX noise gate with live audio VU-meter and silence auto-transmission.
+  - **Modular Speech-to-Text (STT) Pipeline**:
+    - High-speed pre-transcription via **Groq Whisper** (`whisper-large-v3-turbo`), OpenAI Whisper, or local Whisper endpoints (`audio_input_mode = transcribe`, default) with live visual feedback in the web HUD.
+    - Native multimodal audio support (`audio_input_mode = native`) sending raw audio directly to Google Gemini.
+    - Domain-specific prompt vocabulary injection (FSD, SCB, SRV, COVAS, Chaff, etc.) for high recognition accuracy.
+    - Language configuration (`language = en`, default) to eliminate accented speech errors, with optional auto-detection.
   - Multi-provider AI reasoning: Google Gemini (`gemini-flash-lite-latest`) or any **OpenAI-compatible** provider (**DeepSeek**, **Groq**, **Ollama**, **LM Studio**, **OpenRouter**) with multi-turn tool calling.
   - Interactive Text-to-Speech (TTS) Read Aloud with language presets, browser voice selector, and acoustic feedback protection.
   - Client-side Markdown rendering (bold, italic, code blocks, lists) and structured server-side INFO logging.
@@ -85,7 +90,6 @@ The Elite Dangerous community has built incredible software over the years. Howe
    - Designed to grow incrementally with planned modular additions:
      - Proactive in-cockpit audio & text alarms based on real-time telemetry & Journal events.
      - Real-time commodity trading & market opportunity alerts.
-     - Optional offline neural TTS copilot output (e.g. Piper TTS / Windows SAPI).
 
 ---
 
@@ -402,6 +406,12 @@ Or specify a dedicated config file:
 - **Manual & Automatic Voice Commands**:
   - **Manual Push-to-Record (`REC`)**: Click to start recording cockpit voice, click `STOP` to encode and transmit.
   - **Automatic Noise Gate (`VOX`)**: Real-time voice activity detection with interactive threshold slider (default: 40%) and live input volume visualizer. When speaking above the threshold, recording automatically triggers (slider glows red); when silence is detected for the configured duration (default: 2s, set via `voice_silence_ms`), the audio is automatically transmitted to the AI copilot, while the VOX listener remains active for the next command.
+- **Speech-to-Text (STT) Pipeline & Visual Feedback**:
+  - **Pre-transcription (`audio_input_mode = transcribe`, default)**: When speech stops, the client pre-transcribes audio via `/api/transcribe` using high-speed **Groq Whisper** (`whisper-large-v3-turbo`), OpenAI Whisper, or local Whisper endpoints.
+  - **Live Chat Bubble Transcription**: Recognized speech is immediately rendered directly into the commander's message bubble (`🎤 "..."` / `🎙️ "..."`) before transmitting the text prompt to `/api/chat`.
+  - **Language Forcing (`language = en`, default)**: Eliminates auto-detection misclassifications when speaking English with an accent (leave blank or set to `auto` for multi-lingual auto-detection).
+  - **Elite Dangerous Vocabulary Priming (`prompt_vocabulary`)**: Guides Whisper with essential terms (FSD, Supercruise, Chaff, Heatsink, SCB, SRV, COVAS, Pips, Limpet, Thargoid).
+  - **Native Multimodal Audio (`audio_input_mode = native`)**: Optionally sends raw audio bytes directly to multimodal LLMs (e.g. Gemini).
 - **Read Aloud Voice Output (Browser Web Speech API)**:
   - Hands-free audio responses spoken directly by the browser using the Web Speech API (zero external dependencies).
   - Interactive **TTS toggle button** (`🔊 TTS`) to activate or deactivate voice synthesis (saved in `localStorage`).
@@ -459,6 +469,16 @@ Open your browser at `http://127.0.0.1:3000`.
 ---
 
 ## Planned Features & Roadmap
+
+### Milestone Progress
+- [x] **Core Status.json Telemetry Parser**: Event-driven (`fsnotify`) and polling modes with Windows file-lock retry loop.
+- [x] **SQLite System & Navigation Tracking**: Automatic history tracking for visited & targeted systems.
+- [x] **Model Context Protocol (MCP) Server**: Full standard MCP implementation over `stdio` and `http` (SSE).
+- [x] **Two-Way DirectInput Flight Control**: XML `.binds` parsing and hardware scancode execution.
+- [x] **Web Cockpit Assistant HUD (COVAS)**: Dark cockpit HUD with multi-provider AI reasoning (Gemini & OpenAI-compatible).
+- [x] **Browser Web Speech TTS Read Aloud**: Hands-free voice responses with acoustic feedback & echo loopback prevention.
+- [x] **Modular Speech-to-Text (STT) Pipeline**: High-speed Whisper transcription (Groq / OpenAI / local) with visual real-time bubble feedback, language forcing (`language = en`), and domain vocabulary injection.
+- [ ] **Autonomous Proactive Cockpit Alerts & Events**: Real-time push notifications (combat, interdiction, fuel safety, landing gear reminders).
 
 ### Proactive Telemetry & Journal Event Triggers
 - **Autonomous In-Cockpit Audio & Text Alerts**:
@@ -537,6 +557,9 @@ ed-assist/
 │   ├── store/
 │   │   ├── store.go             # SQLite store for visited and targeted systems
 │   │   └── store_test.go
+│   ├── stt/
+│   │   ├── stt.go               # Speech-to-Text transcriber (Groq/OpenAI Whisper)
+│   │   └── stt_test.go
 │   ├── tracker/
 │   │   ├── tracker.go           # Journal & Status.json event tracking for systems
 │   │   └── tracker_test.go

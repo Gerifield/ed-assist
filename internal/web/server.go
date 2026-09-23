@@ -84,9 +84,13 @@ func NewServer(addr string, aiClient llm.Client, bridge *MCPBridge, modelName st
 		gateThreshold:  gateThreshold,
 		silenceMs:      silenceMs,
 		echoProtection: true, // Default to true
+		audioInputMode: "transcribe",
 	}
 	for _, opt := range opts {
 		opt(srv)
+	}
+	if srv.audioInputMode == "" {
+		srv.audioInputMode = "transcribe"
 	}
 	return srv
 }
@@ -147,8 +151,9 @@ type ChatRequest struct {
 
 // ChatResponse represents the assistant output.
 type ChatResponse struct {
-	Reply string `json:"reply,omitempty"`
-	Error string `json:"error,omitempty"`
+	Reply         string `json:"reply,omitempty"`
+	Transcription string `json:"transcription,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +190,8 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		"voice_silence_ms":      s.silenceMs,
 		"voice_echo_protection": s.echoProtection,
 		"system_prompt":         systemPrompt,
+		"audio_input_mode":      s.audioInputMode,
+		"stt_enabled":           s.transcriber != nil,
 	})
 }
 
@@ -311,6 +318,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	prompt := req.Prompt
 	var rawAudioBytes []byte
 	audioMime := req.AudioMime
+	var transcription string
 
 	if hasAudio {
 		decodedAudio, err := base64.StdEncoding.DecodeString(req.AudioB64)
@@ -338,7 +346,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 				filename = "audio.wav"
 			}
 
-			transcription, err := s.transcriber.Transcribe(r.Context(), bytes.NewReader(decodedAudio), filename)
+			var err error
+			transcription, err = s.transcriber.Transcribe(r.Context(), bytes.NewReader(decodedAudio), filename)
 			if err != nil {
 				slog.Error("STT transcription failed in chat endpoint", "error", err)
 				w.Header().Set("Content-Type", "application/json")
@@ -402,5 +411,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	s.historyMu.Unlock()
 
-	_ = json.NewEncoder(w).Encode(ChatResponse{Reply: reply})
+	_ = json.NewEncoder(w).Encode(ChatResponse{
+		Reply:         reply,
+		Transcription: transcription,
+	})
 }

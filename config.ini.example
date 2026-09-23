@@ -78,6 +78,10 @@ groq_model = whisper-large-v3-turbo
 ; Base URL for OpenAI-compatible STT endpoint (default: https://api.groq.com/openai/v1)
 openai_base_url = https://api.groq.com/openai/v1
 
+; Spoken language code: default is "en" (forcing English improves recognition of accented speech).
+; Leave empty (language = ) or set to "auto" to let Whisper automatically detect the spoken language.
+language = en
+
 ; Elite Dangerous specific prompt vocabulary to improve Whisper transcription accuracy
 prompt_vocabulary = FSD, Frame Shift Drive, SCB, SRV, COVAS, Chaff, Heatsink, Pips, Limpet, Supercruise, Coriolis, Thargoid, Witchspace
 

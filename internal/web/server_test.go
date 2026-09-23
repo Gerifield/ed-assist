@@ -66,6 +66,9 @@ func TestWebServerInfoAndStatic(t *testing.T) {
 	if info["system_prompt"] != llm.DefaultSystemPrompt {
 		t.Errorf("expected default system_prompt, got %v", info["system_prompt"])
 	}
+	if info["audio_input_mode"] != "transcribe" {
+		t.Errorf("expected audio_input_mode 'transcribe', got %v", info["audio_input_mode"])
+	}
 
 	// Test with WithEchoProtection(false)
 	serverNoEcho := NewServer("127.0.0.1:0", geminiClient, nil, "gemini-3.8-flash-lite", 42, 1800, WithEchoProtection(false))
@@ -218,6 +221,9 @@ func TestWebServerChatWithSTTTranscribeMode(t *testing.T) {
 
 	if resp.Reply != "Deploying hardpoints." {
 		t.Errorf("expected 'Deploying hardpoints.', got '%s'", resp.Reply)
+	}
+	if resp.Transcription != "Deploy weapons" {
+		t.Errorf("expected transcription 'Deploy weapons', got '%s'", resp.Transcription)
 	}
 }
 

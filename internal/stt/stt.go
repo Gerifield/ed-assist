@@ -27,6 +27,7 @@ type Config struct {
 	Model            string `json:"model"`               // e.g. "whisper-large-v3-turbo" or "whisper-1"
 	BaseURL          string `json:"base_url"`            // e.g. "https://api.groq.com/openai/v1" or "http://localhost:8080/v1"
 	PromptVocabulary string `json:"prompt_vocabulary"`  // Elite Dangerous vocabulary prompt to guide Whisper
+	Language         string `json:"language"`           // Optional ISO language code (e.g. "en"), empty for auto-detect
 	HTTPClient       *http.Client `json:"-"`
 }
 
@@ -134,6 +135,13 @@ func (t *OpenAITranscriber) Transcribe(ctx context.Context, audio io.Reader, fil
 	if strings.TrimSpace(t.cfg.PromptVocabulary) != "" {
 		if err := writer.WriteField("prompt", t.cfg.PromptVocabulary); err != nil {
 			return "", fmt.Errorf("failed writing prompt form field: %w", err)
+		}
+	}
+
+	// Add language field if configured, otherwise omitted for Whisper auto-detection
+	if strings.TrimSpace(t.cfg.Language) != "" {
+		if err := writer.WriteField("language", strings.TrimSpace(t.cfg.Language)); err != nil {
+			return "", fmt.Errorf("failed writing language form field: %w", err)
 		}
 	}
 

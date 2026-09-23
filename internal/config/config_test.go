@@ -535,6 +535,69 @@ openai_model = gpt-4o-mini
 	}
 }
 
+func TestLoadSTTLanguageConfig(t *testing.T) {
+	// 1. Default should be "en"
+	def := DefaultConfig()
+	if def.STTLanguage != "en" {
+		t.Errorf("expected default STTLanguage 'en', got '%s'", def.STTLanguage)
+	}
+
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	// 2. Explicit language
+	content := `
+[stt]
+language = hu
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.STTLanguage != "hu" {
+		t.Errorf("expected STTLanguage 'hu', got '%s'", cfg.STTLanguage)
+	}
+
+	// 3. Language = auto -> empty for auto-detect
+	contentAuto := `
+[stt]
+language = auto
+`
+	if err := os.WriteFile(iniPath, []byte(contentAuto), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.STTLanguage != "" {
+		t.Errorf("expected STTLanguage empty for auto, got '%s'", cfg.STTLanguage)
+	}
+
+	// 4. Language = (empty in INI) -> empty for auto-detect
+	contentEmpty := `
+[stt]
+language = 
+`
+	if err := os.WriteFile(iniPath, []byte(contentEmpty), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err = Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.STTLanguage != "" {
+		t.Errorf("expected STTLanguage empty when value is blank, got '%s'", cfg.STTLanguage)
+	}
+}
+
+
 
 
 
