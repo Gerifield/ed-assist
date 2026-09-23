@@ -38,6 +38,8 @@ func main() {
 	openaiEndpointFlag := flag.String("openai-endpoint", "", "OpenAI-compatible base URL (e.g. https://api.openai.com/v1, https://api.deepseek.com/v1)")
 	statusFileFlag := flag.String("status", "", "Override path to Status.json")
 	dbPathFlag := flag.String("db", "", "Path to SQLite database file")
+	maxVisitedFlag := flag.Int("max-visited", 0, "Maximum number of visited star systems to retain in SQLite (default: 100)")
+	maxTargetedFlag := flag.Int("max-targeted", 0, "Maximum number of targeted systems to retain in SQLite (default: 100)")
 	cacheHoursFlag := flag.Int("cache-hours", 0, "System info and external API cache TTL in hours (default: 8)")
 	maxToolRoundsFlag := flag.Int("max-tool-rounds", 0, "Maximum rounds for AI tool calling loop (default: 10)")
 	logLevelFlag := flag.String("loglevel", "info", "Log level (debug, info, warn, error)")
@@ -109,6 +111,12 @@ func main() {
 	if *maxToolRoundsFlag > 0 {
 		cfg.MaxToolRounds = *maxToolRoundsFlag
 	}
+	if *maxVisitedFlag > 0 {
+		cfg.MaxVisitedSystems = *maxVisitedFlag
+	}
+	if *maxTargetedFlag > 0 {
+		cfg.MaxTargetedSystems = *maxTargetedFlag
+	}
 
 	// Set up logger
 	opts := &slog.HandlerOptions{}
@@ -129,6 +137,8 @@ func main() {
 		"web_addr", cfg.WebAddr,
 		"model", cfg.GeminiModel,
 		"mcp_mode", cfg.GeminiMCPMode,
+		"max_visited", cfg.MaxVisitedSystems,
+		"max_targeted", cfg.MaxTargetedSystems,
 	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -171,7 +181,10 @@ func main() {
 
 	default: // "inprocess" - self-contained mode!
 		slog.Info("running in-process MCP server and telemetry engine")
-		st, err := store.New(cfg.DBPath)
+		st, err := store.New(cfg.DBPath,
+			store.WithMaxVisited(cfg.MaxVisitedSystems),
+			store.WithMaxTargeted(cfg.MaxTargetedSystems),
+		)
 		if err != nil {
 			slog.Warn("could not initialize SQLite store, continuing in-memory", "error", err)
 		} else {

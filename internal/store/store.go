@@ -45,14 +45,37 @@ type TargetedSystem struct {
 
 // Store manages SQLite persistence for visited and targeted systems.
 type Store struct {
-	db     *sql.DB
-	dbPath string
-	mu     sync.Mutex
+	db          *sql.DB
+	dbPath      string
+	mu          sync.Mutex
+	maxVisited  int
+	maxTargeted int
 
 	lastVisitedAddr int64
 	lastVisitedName string
 	lastTargetAddr  int64
 	lastTargetName  string
+}
+
+// StoreOption configures optional SQLite store settings.
+type StoreOption func(*Store)
+
+// WithMaxVisited configures the maximum number of visited systems to retain in SQLite.
+func WithMaxVisited(max int) StoreOption {
+	return func(s *Store) {
+		if max > 0 {
+			s.maxVisited = max
+		}
+	}
+}
+
+// WithMaxTargeted configures the maximum number of targeted systems to retain in SQLite.
+func WithMaxTargeted(max int) StoreOption {
+	return func(s *Store) {
+		if max > 0 {
+			s.maxTargeted = max
+		}
+	}
 }
 
 // DefaultDBPath returns the path to ed_assist.db located next to the binary.
@@ -66,7 +89,7 @@ func DefaultDBPath() string {
 }
 
 // New opens or creates the SQLite database at dbPath and initializes the schema.
-func New(dbPath string) (*Store, error) {
+func New(dbPath string, opts ...StoreOption) (*Store, error) {
 	if dbPath == "" {
 		dbPath = DefaultDBPath()
 	}
@@ -88,8 +111,13 @@ func New(dbPath string) (*Store, error) {
 	db.SetMaxOpenConns(1) // SQLite works best with 1 writer connection
 
 	s := &Store{
-		db:     db,
-		dbPath: dbPath,
+		db:          db,
+		dbPath:      dbPath,
+		maxVisited:  100,
+		maxTargeted: 100,
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 
 	if err := s.initSchema(); err != nil {
@@ -98,8 +126,28 @@ func New(dbPath string) (*Store, error) {
 	}
 
 	s.loadLastKnown()
-	slog.Info("sqlite store initialized", "path", dbPath)
+	slog.Info("sqlite store initialized", "path", dbPath, "max_visited", s.maxVisited, "max_targeted", s.maxTargeted)
 	return s, nil
+}
+
+// MaxVisited returns the configured maximum visited systems limit.
+func (s *Store) MaxVisited() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.maxVisited <= 0 {
+		return 100
+	}
+	return s.maxVisited
+}
+
+// MaxTargeted returns the configured maximum targeted systems limit.
+func (s *Store) MaxTargeted() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.maxTargeted <= 0 {
+		return 100
+	}
+	return s.maxTargeted
 }
 
 func (s *Store) initSchema() error {
@@ -233,17 +281,22 @@ func (s *Store) RecordVisited(v VisitedSystem) error {
 
 	slog.Info("recorded visited system", "system", v.SystemName, "address", v.SystemAddress, "id", id)
 
-	// Prune table to keep only the latest 100 entries
+	maxV := s.maxVisited
+	if maxV <= 0 {
+		maxV = 100
+	}
+
+	// Prune table to keep only the latest maxV entries
 	pruneQuery := `
 	DELETE FROM visited_systems WHERE id NOT IN (
-		SELECT id FROM visited_systems ORDER BY visited_at DESC, id DESC LIMIT 100
+		SELECT id FROM visited_systems ORDER BY visited_at DESC, id DESC LIMIT ?
 	);
 	`
-	_, _ = s.db.Exec(pruneQuery)
+	_, _ = s.db.Exec(pruneQuery, maxV)
 	return nil
 }
 
-// RecordTargeted stores a targeted destination and prunes the table to the latest 100 entries.
+// RecordTargeted stores a targeted destination and prunes the table to the latest entries.
 func (s *Store) RecordTargeted(t TargetedSystem) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -285,23 +338,33 @@ func (s *Store) RecordTargeted(t TargetedSystem) error {
 
 	slog.Info("recorded targeted system", "system", t.SystemName, "address", t.SystemAddress, "id", id)
 
-	// Prune table to keep only the latest 100 entries
+	maxT := s.maxTargeted
+	if maxT <= 0 {
+		maxT = 100
+	}
+
+	// Prune table to keep only the latest maxT entries
 	pruneQuery := `
 	DELETE FROM targeted_systems WHERE id NOT IN (
-		SELECT id FROM targeted_systems ORDER BY targeted_at DESC, id DESC LIMIT 100
+		SELECT id FROM targeted_systems ORDER BY targeted_at DESC, id DESC LIMIT ?
 	);
 	`
-	_, _ = s.db.Exec(pruneQuery)
+	_, _ = s.db.Exec(pruneQuery, maxT)
 	return nil
 }
 
-// GetVisited returns the latest visited systems up to limit (max 100).
+// GetVisited returns the latest visited systems up to limit.
 func (s *Store) GetVisited(limit int) ([]VisitedSystem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if limit <= 0 || limit > 100 {
-		limit = 100
+	maxV := s.maxVisited
+	if maxV <= 0 {
+		maxV = 100
+	}
+
+	if limit <= 0 || limit > maxV {
+		limit = maxV
 	}
 
 	query := `
@@ -338,13 +401,18 @@ func (s *Store) GetVisited(limit int) ([]VisitedSystem, error) {
 	return results, rows.Err()
 }
 
-// GetTargeted returns the latest targeted systems up to limit (max 100).
+// GetTargeted returns the latest targeted systems up to limit.
 func (s *Store) GetTargeted(limit int) ([]TargetedSystem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if limit <= 0 || limit > 100 {
-		limit = 100
+	maxT := s.maxTargeted
+	if maxT <= 0 {
+		maxT = 100
+	}
+
+	if limit <= 0 || limit > maxT {
+		limit = maxT
 	}
 
 	query := `

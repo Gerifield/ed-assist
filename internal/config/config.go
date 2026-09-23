@@ -17,11 +17,13 @@ import (
 
 // Config holds runtime configuration options for ed-assist.
 type Config struct {
-	EnableTracking bool          `json:"enable_tracking"`
-	GameControl    bool          `json:"game_control"`
-	KeyHoldMs      int           `json:"key_hold_ms"`
-	BindingsPath   string        `json:"bindings_path"`
-	DBPath         string        `json:"db_path"`
+	EnableTracking     bool          `json:"enable_tracking"`
+	MaxVisitedSystems  int           `json:"max_visited_systems"`  // default: 100
+	MaxTargetedSystems int           `json:"max_targeted_systems"` // default: 100
+	GameControl        bool          `json:"game_control"`
+	KeyHoldMs          int           `json:"key_hold_ms"`
+	BindingsPath       string        `json:"bindings_path"`
+	DBPath             string        `json:"db_path"`
 	StatusFilePath string        `json:"status_file_path"`
 	ConfigSource   string        `json:"config_source"`
 	EnableMCP      bool          `json:"enable_mcp"`
@@ -73,9 +75,11 @@ type Config struct {
 func DefaultConfig() *Config {
 	defaultPath := DetermineDefaultStatusPath()
 	return &Config{
-		EnableTracking: false,
-		GameControl:    false,
-		KeyHoldMs:      80,
+		EnableTracking:     false,
+		MaxVisitedSystems:  100,
+		MaxTargetedSystems: 100,
+		GameControl:        false,
+		KeyHoldMs:          80,
 		BindingsPath:   "",
 		DBPath:         DetermineDefaultDBPath(),
 		StatusFilePath: defaultPath,
@@ -197,6 +201,18 @@ func Load(configFileOverride string) (*Config, error) {
 	if trackStr := lookupProp(props, "enable_tracking", "tracking", "track"); trackStr != "" {
 		trackLower := strings.ToLower(trackStr)
 		cfg.EnableTracking = trackLower == "true" || trackLower == "1" || trackLower == "yes" || trackLower == "on"
+	}
+
+	if vStr := lookupProp(props, "max_visited_systems", "visited_systems_limit", "max_visited", "max_locations", "history_visited_limit"); vStr != "" {
+		if n, err := strconv.Atoi(vStr); err == nil && n > 0 {
+			cfg.MaxVisitedSystems = n
+		}
+	}
+
+	if tStr := lookupProp(props, "max_targeted_systems", "targeted_systems_limit", "max_targets", "max_targeted", "history_targeted_limit"); tStr != "" {
+		if n, err := strconv.Atoi(tStr); err == nil && n > 0 {
+			cfg.MaxTargetedSystems = n
+		}
 	}
 
 	if gcStr := lookupProp(props, "game_control", "control", "enable_game_control", "enable_control"); gcStr != "" {

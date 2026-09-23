@@ -76,6 +76,8 @@ func main() {
 	retryDelayFlag := flag.Duration("retry-delay", 0, "Delay time between quick retries (default: 25ms)")
 	trackFlag := flag.Bool("track", false, "Enable SQLite tracking of visited and targeted systems (default: false)")
 	flag.BoolVar(trackFlag, "tracking", false, "Enable SQLite tracking of visited and targeted systems (alias)")
+	maxVisitedFlag := flag.Int("max-visited", 0, "Maximum number of visited star systems to retain in SQLite (default: 100)")
+	maxTargetedFlag := flag.Int("max-targeted", 0, "Maximum number of targeted systems to retain in SQLite (default: 100)")
 	cacheHoursFlag := flag.Int("cache-hours", 0, "System info and external API cache TTL in hours (default: 8)")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	flag.Parse()
@@ -134,6 +136,12 @@ func main() {
 		cfg.SystemCacheHours = *cacheHoursFlag
 		cfg.SystemCacheTTL = time.Duration(*cacheHoursFlag) * time.Hour
 	}
+	if *maxVisitedFlag > 0 {
+		cfg.MaxVisitedSystems = *maxVisitedFlag
+	}
+	if *maxTargetedFlag > 0 {
+		cfg.MaxTargetedSystems = *maxTargetedFlag
+	}
 
 	setupLogging(cfg.LogLevel, cfg.LogFile, cfg.EnableMCP && cfg.MCPTransport == "stdio")
 
@@ -142,6 +150,8 @@ func main() {
 		"mcp_transport", cfg.MCPTransport,
 		"mcp_addr", cfg.MCPAddr,
 		"tracking_enabled", cfg.EnableTracking,
+		"max_visited", cfg.MaxVisitedSystems,
+		"max_targeted", cfg.MaxTargetedSystems,
 		"game_control", cfg.GameControl,
 		"key_hold_ms", cfg.KeyHoldMs,
 		"mode", cfg.Mode,
@@ -169,7 +179,10 @@ func main() {
 	if cfg.EnableTracking {
 		// Initialize local SQLite database next to binary
 		var err error
-		sqliteStore, err = store.New(cfg.DBPath)
+		sqliteStore, err = store.New(cfg.DBPath,
+			store.WithMaxVisited(cfg.MaxVisitedSystems),
+			store.WithMaxTargeted(cfg.MaxTargetedSystems),
+		)
 		if err != nil {
 			slog.Error("failed to open sqlite database", "path", cfg.DBPath, "error", err)
 			os.Exit(1)

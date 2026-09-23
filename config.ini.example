@@ -38,9 +38,15 @@ mcp_transport = stdio
 ; Accepts "127.0.0.1:8080", ":8080", or simply port number "8080"
 mcp_addr = 127.0.0.1:8080
 
-; Optional system tracking (latest 100 visited systems & 100 targeted destinations in SQLite)
+; Optional system tracking (visited systems & targeted destinations in SQLite)
 ; Set to true or launch with -track to enable
 enable_tracking = false
+
+; Maximum number of visited star systems to retain in SQLite history (default: 100)
+max_visited_systems = 100
+
+; Maximum number of targeted systems/destinations to retain in SQLite history (default: 100)
+max_targeted_systems = 100
 
 ; SQLite database path for visited and targeted system tracking (used when enable_tracking = true)
 ; If empty or omitted, defaults to ed_assist.db located next to the binary

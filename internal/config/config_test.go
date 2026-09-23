@@ -597,6 +597,41 @@ language =
 	}
 }
 
+func TestLoadMaxVisitedAndTargetedSystems(t *testing.T) {
+	// 1. Defaults
+	def := DefaultConfig()
+	if def.MaxVisitedSystems != 100 {
+		t.Errorf("expected default MaxVisitedSystems 100, got %d", def.MaxVisitedSystems)
+	}
+	if def.MaxTargetedSystems != 100 {
+		t.Errorf("expected default MaxTargetedSystems 100, got %d", def.MaxTargetedSystems)
+	}
+
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+max_visited_systems = 250
+max_targeted_systems = 50
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxVisitedSystems != 250 {
+		t.Errorf("expected MaxVisitedSystems 250, got %d", cfg.MaxVisitedSystems)
+	}
+	if cfg.MaxTargetedSystems != 50 {
+		t.Errorf("expected MaxTargetedSystems 50, got %d", cfg.MaxTargetedSystems)
+	}
+}
+
+
 
 
 
