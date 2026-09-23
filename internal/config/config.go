@@ -54,6 +54,15 @@ type Config struct {
 	VoiceSilenceMs       int  `json:"voice_silence_ms"`       // default: 2000 (ms)
 	VoiceEchoProtection bool `json:"voice_echo_protection"` // default: true (suppress VOX trigger while COVAS speaks aloud)
 
+	// Audio input mode & STT settings
+	AudioInputMode      string `json:"audio_input_mode"`       // "native" or "transcribe"
+	STTEnabled          bool   `json:"stt_enabled"`            // true/false
+	STTBackend          string `json:"stt_backend"`            // "groq", "openai", "local_whisper"
+	STTGroqAPIKey       string `json:"stt_groq_api_key"`       // or GROQ_API_KEY env
+	STTGroqModel        string `json:"stt_groq_model"`         // default: "whisper-large-v3-turbo"
+	STTOpenAIBaseURL    string `json:"stt_openai_base_url"`     // default: "https://api.groq.com/openai/v1"
+	STTPromptVocabulary string `json:"stt_prompt_vocabulary"`  // Elite Dangerous prompt vocabulary for Whisper
+
 	// External API & System info cache settings
 	SystemCacheHours int           `json:"system_cache_hours"` // default: 8 (hours)
 	SystemCacheTTL   time.Duration `json:"system_cache_ttl"`   // computed duration, default 8*time.Hour
@@ -91,8 +100,14 @@ func DefaultConfig() *Config {
 		VoiceGateThreshold:   40,
 		VoiceSilenceMs:       2000,
 		VoiceEchoProtection: true,
-		SystemCacheHours:   8,
-		SystemCacheTTL:     8 * time.Hour,
+		AudioInputMode:      "transcribe",
+		STTEnabled:          true,
+		STTBackend:          "groq",
+		STTGroqModel:        "whisper-large-v3-turbo",
+		STTOpenAIBaseURL:    "https://api.groq.com/openai/v1",
+		STTPromptVocabulary: "FSD, Frame Shift Drive, SCB, SRV, COVAS, Chaff, Heatsink, Pips, Limpet, Supercruise, Coriolis, Thargoid, Witchspace",
+		SystemCacheHours:    8,
+		SystemCacheTTL:      8 * time.Hour,
 	}
 }
 
@@ -396,6 +411,37 @@ func Load(configFileOverride string) (*Config, error) {
 	if echoStr := lookupProp(props, "voice_echo_protection", "echo_protection", "tts_echo_protection", "vox_echo_protection"); echoStr != "" {
 		echoLower := strings.ToLower(echoStr)
 		cfg.VoiceEchoProtection = echoLower == "true" || echoLower == "1" || echoLower == "yes" || echoLower == "on"
+	}
+
+	if aim := lookupProp(props, "audio_input_mode", "input_mode"); aim != "" {
+		cfg.AudioInputMode = strings.ToLower(aim)
+	}
+
+	if sttEnStr := lookupProp(props, "stt.enabled", "stt_enabled", "enabled"); sttEnStr != "" {
+		sttLower := strings.ToLower(sttEnStr)
+		cfg.STTEnabled = sttLower == "true" || sttLower == "1" || sttLower == "yes" || sttLower == "on"
+	}
+
+	if backend := lookupProp(props, "stt.backend", "stt_backend", "backend"); backend != "" {
+		cfg.STTBackend = strings.ToLower(backend)
+	}
+
+	if gKey := lookupProp(props, "stt.groq_api_key", "groq_api_key", "stt_groq_api_key"); gKey != "" {
+		cfg.STTGroqAPIKey = gKey
+	} else if envGKey := os.Getenv("GROQ_API_KEY"); envGKey != "" {
+		cfg.STTGroqAPIKey = envGKey
+	}
+
+	if gModel := lookupProp(props, "stt.groq_model", "groq_model", "stt_groq_model"); gModel != "" {
+		cfg.STTGroqModel = gModel
+	}
+
+	if oURL := lookupProp(props, "stt.openai_base_url", "openai_base_url", "stt_openai_base_url"); oURL != "" {
+		cfg.STTOpenAIBaseURL = oURL
+	}
+
+	if vocab := lookupProp(props, "stt.prompt_vocabulary", "prompt_vocabulary", "stt_prompt_vocabulary"); vocab != "" {
+		cfg.STTPromptVocabulary = vocab
 	}
 
 	if cacheStr := lookupProp(props, "system_cache_hours", "system_info_cache_hours", "system_cache_ttl", "cache_ttl"); cacheStr != "" {

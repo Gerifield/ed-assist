@@ -17,6 +17,7 @@ import (
 	"ed-assist/internal/mcpserver"
 	"ed-assist/internal/reader"
 	"ed-assist/internal/store"
+	"ed-assist/internal/stt"
 	"ed-assist/internal/tracker"
 	"ed-assist/internal/web"
 )
@@ -240,6 +241,29 @@ func main() {
 	modelDisplayName := aiClient.ModelName()
 	slog.Info("AI copilot initialized", "provider", aiClient.Provider(), "model", modelDisplayName)
 
+	// Initialize STT transcriber if enabled
+	var transcriber stt.Transcriber
+	if cfg.STTEnabled {
+		sttKey := cfg.STTGroqAPIKey
+		if sttKey == "" {
+			sttKey = cfg.OpenAIAPIKey
+		}
+		t, err := stt.NewTranscriber(stt.Config{
+			Enabled:          cfg.STTEnabled,
+			Backend:          cfg.STTBackend,
+			APIKey:           sttKey,
+			Model:            cfg.STTGroqModel,
+			BaseURL:          cfg.STTOpenAIBaseURL,
+			PromptVocabulary: cfg.STTPromptVocabulary,
+		})
+		if err != nil {
+			slog.Warn("failed initializing STT transcriber", "error", err)
+		} else {
+			transcriber = t
+			slog.Info("STT transcriber initialized", "backend", cfg.STTBackend, "audio_input_mode", cfg.AudioInputMode)
+		}
+	}
+
 	// Create and start web server
 	webServer := web.NewServer(
 		cfg.WebAddr,
@@ -249,6 +273,8 @@ func main() {
 		cfg.VoiceGateThreshold,
 		cfg.VoiceSilenceMs,
 		web.WithEchoProtection(cfg.VoiceEchoProtection),
+		web.WithTranscriber(transcriber),
+		web.WithAudioInputMode(cfg.AudioInputMode),
 	)
 	if err := webServer.Start(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("web server error", "error", err)

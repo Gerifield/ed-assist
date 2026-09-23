@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -123,6 +124,100 @@ func TestWebServerChatEndpointWithGemini(t *testing.T) {
 
 	if resp.Reply != "All landing gear retracted, Commander." {
 		t.Errorf("expected reply, got %s", resp.Reply)
+	}
+}
+
+type mockTranscriber struct {
+	transcribedText string
+	err             error
+}
+
+func (m *mockTranscriber) Transcribe(ctx context.Context, audio io.Reader, filename string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	return m.transcribedText, nil
+}
+
+func TestWebServerTranscribeEndpoint(t *testing.T) {
+	mt := &mockTranscriber{transcribedText: "Frameshift drive charging"}
+	geminiClient := llm.NewGeminiClient("fake-key", "gemini-flash-lite")
+	server := NewServer("127.0.0.1:0", geminiClient, nil, "gemini-flash-lite", 40, 2000, WithTranscriber(mt))
+
+	reqBody := map[string]string{
+		"audio_b64":  "ZHVtbXkgYXVkaW8=", // base64 for "dummy audio"
+		"audio_mime": "audio/webm",
+	}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/transcribe", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	server.handleTranscribe(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed decoding json: %v", err)
+	}
+
+	if resp["text"] != "Frameshift drive charging" {
+		t.Errorf("expected 'Frameshift drive charging', got '%s'", resp["text"])
+	}
+}
+
+func TestWebServerChatWithSTTTranscribeMode(t *testing.T) {
+	tsOpenAI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"id": "chatcmpl-test",
+			"choices": []map[string]any{
+				{
+					"index": 0,
+					"message": map[string]any{
+						"role":    "assistant",
+						"content": "Deploying hardpoints.",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer tsOpenAI.Close()
+
+	openAIClient := llm.NewOpenAIClient("sk-test", "gpt-4o-mini",
+		llm.WithOpenAIBaseURL(tsOpenAI.URL),
+		llm.WithOpenAIHTTPClient(tsOpenAI.Client()),
+	)
+
+	mt := &mockTranscriber{transcribedText: "Deploy weapons"}
+	server := NewServer("127.0.0.1:0", openAIClient, nil, "gpt-4o-mini", 40, 2000,
+		WithTranscriber(mt),
+		WithAudioInputMode("transcribe"),
+	)
+
+	chatReq := ChatRequest{
+		Prompt:    "Commander orders:",
+		AudioB64:  "ZHVtbXkgYXVkaW8=",
+		AudioMime: "audio/webm",
+	}
+	body, _ := json.Marshal(chatReq)
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	server.handleChat(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp ChatResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+
+	if resp.Reply != "Deploying hardpoints." {
+		t.Errorf("expected 'Deploying hardpoints.', got '%s'", resp.Reply)
 	}
 }
 

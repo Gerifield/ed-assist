@@ -65,6 +65,29 @@ web_addr = 127.0.0.1:3000
 ; "openai" mode supports OpenAI, DeepSeek, Groq, Ollama, LM Studio, OpenRouter, etc.
 ai_provider = gemini
 
+; Audio input processing strategy:
+; native     = send raw audio bytes directly to AI (e.g. multimodal Gemini)
+; transcribe = pre-transcribe audio to text via STT, then send pure text prompt
+audio_input_mode = transcribe
+
+[stt]
+; Enable Speech-to-Text transcriber engine
+enabled = true
+
+; Chosen backend: "groq", "openai", "local_whisper"
+backend = groq
+
+; Groq API key (or export GROQ_API_KEY environment variable)
+groq_api_key =
+groq_model = whisper-large-v3-turbo
+
+; Base URL for OpenAI-compatible STT endpoint (default: https://api.groq.com/openai/v1)
+openai_base_url = https://api.groq.com/openai/v1
+
+; Elite Dangerous specific prompt vocabulary to improve Whisper transcription accuracy
+prompt_vocabulary = FSD, Frame Shift Drive, SCB, SRV, COVAS, Chaff, Heatsink, Pips, Limpet, Supercruise, Coriolis, Thargoid, Witchspace
+
+[ai]
 ; --- Google Gemini Configuration (when ai_provider = gemini) ---
 ; Google Gemini API key (or export GEMINI_API_KEY environment variable)
 gemini_api_key = 
