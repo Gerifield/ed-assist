@@ -14,9 +14,10 @@ type ProviderConfig struct {
 	OpenAIKey     string
 	OpenAIModel   string
 	OpenAIBaseURL string
-	SystemPrompt  string
-	MaxToolRounds int
-	MCPCaller     MCPCaller
+	SystemPrompt    string
+	MaxToolRounds   int
+	AutoTimeContext bool
+	MCPCaller       MCPCaller
 }
 
 // NewClientFromConfig creates the appropriate LLM client based on ProviderConfig.
@@ -37,6 +38,7 @@ func NewClientFromConfig(cfg ProviderConfig) (Client, error) {
 		if cfg.MaxToolRounds > 0 {
 			opts = append(opts, WithGeminiMaxRounds(cfg.MaxToolRounds))
 		}
+		opts = append(opts, WithGeminiAutoTime(cfg.AutoTimeContext))
 		return NewGeminiClient(cfg.GeminiKey, cfg.GeminiModel, opts...), nil
 
 	case "openai", "openai-compatible", "deepseek", "ollama", "groq", "lmstudio":
@@ -53,6 +55,7 @@ func NewClientFromConfig(cfg ProviderConfig) (Client, error) {
 		if cfg.MaxToolRounds > 0 {
 			opts = append(opts, WithOpenAIMaxRounds(cfg.MaxToolRounds))
 		}
+		opts = append(opts, WithOpenAIAutoTime(cfg.AutoTimeContext))
 		return NewOpenAIClient(cfg.OpenAIKey, cfg.OpenAIModel, opts...), nil
 
 	default:

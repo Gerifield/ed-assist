@@ -100,6 +100,10 @@ system_prompt =
 ; Maximum tool calling rounds per conversation turn to prevent infinite loops (default: 10)
 max_tool_rounds = 10
 
+; Automatically inject current ship chronometer and UTC / in-game Galaxy time into system prompt
+; Enables COVAS to always know the current time without wasteful tool calling rounds (true / false, default: true)
+auto_time_context = true
+
 ; MCP connection mode for ed-assist-web:
 ; "inprocess" = run MCP server & game watcher directly inside the web binary (all-in-one)
 ; "http"      = connect to external ed-assist running MCP over HTTP/SSE (default: http://127.0.0.1:8080/sse)

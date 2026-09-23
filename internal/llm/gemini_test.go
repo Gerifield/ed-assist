@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -221,7 +222,7 @@ func TestGeminiSystemPrompt(t *testing.T) {
 	if reply != "Ahoy commander." {
 		t.Errorf("expected 'Ahoy commander.', got '%s'", reply)
 	}
-	if capturedPrompt != customPrompt {
-		t.Errorf("expected captured system prompt in HTTP request '%s', got '%s'", customPrompt, capturedPrompt)
+	if !strings.Contains(capturedPrompt, customPrompt) {
+		t.Errorf("expected captured system prompt in HTTP request to contain '%s', got '%s'", customPrompt, capturedPrompt)
 	}
 }

@@ -47,6 +47,7 @@ type Config struct {
 	GeminiMCPEndpoint string `json:"gemini_mcp_endpoint"` // e.g. "http://127.0.0.1:8080/sse" or path to binary for stdio
 	SystemPrompt      string `json:"system_prompt"`       // custom system prompt (empty uses default COVAS prompt)
 	MaxToolRounds     int    `json:"max_tool_rounds"`     // maximum rounds for AI tool calling loop (default: 10)
+	AutoTimeContext   bool   `json:"auto_time_context"`   // automatically inject ship chronometer/time into prompt (default: true)
 
 	// Noise gate / VOX voice recording settings
 	VoiceGateThreshold   int  `json:"voice_gate_threshold"`   // default: 40 (0-100 percent)
@@ -86,6 +87,7 @@ func DefaultConfig() *Config {
 		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
 		SystemPrompt:   llm.DefaultSystemPrompt,
 		MaxToolRounds:  10,
+		AutoTimeContext: true,
 		VoiceGateThreshold:   40,
 		VoiceSilenceMs:       2000,
 		VoiceEchoProtection: true,
@@ -370,6 +372,11 @@ func Load(configFileOverride string) (*Config, error) {
 		if r, err := strconv.Atoi(roundsStr); err == nil && r > 0 {
 			cfg.MaxToolRounds = r
 		}
+	}
+
+	if timeStr := lookupProp(props, "auto_time_context", "auto_time_injection", "time_injection", "inject_time", "time_context"); timeStr != "" {
+		timeLower := strings.ToLower(timeStr)
+		cfg.AutoTimeContext = timeLower == "true" || timeLower == "1" || timeLower == "yes" || timeLower == "on"
 	}
 
 	if threshStr := lookupProp(props, "voice_gate_threshold", "gate_threshold", "noise_gate_threshold", "vox_threshold"); threshStr != "" {

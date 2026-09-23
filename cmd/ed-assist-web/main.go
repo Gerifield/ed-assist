@@ -223,9 +223,10 @@ func main() {
 		OpenAIKey:     cfg.OpenAIAPIKey,
 		OpenAIModel:   cfg.OpenAIModel,
 		OpenAIBaseURL: cfg.OpenAIBaseURL,
-		SystemPrompt:  cfg.SystemPrompt,
-		MaxToolRounds: cfg.MaxToolRounds,
-		MCPCaller:     bridge,
+		SystemPrompt:    cfg.SystemPrompt,
+		MaxToolRounds:   cfg.MaxToolRounds,
+		AutoTimeContext: cfg.AutoTimeContext,
+		MCPCaller:       bridge,
 	})
 	if err != nil {
 		slog.Error("failed initializing AI client", "error", err)

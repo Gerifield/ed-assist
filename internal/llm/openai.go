@@ -19,6 +19,7 @@ type OpenAIClient struct {
 	baseURL      string
 	systemPrompt string
 	maxRounds    int
+	autoTime     bool
 	mcpCaller    MCPCaller
 	httpClient   *http.Client
 }
@@ -69,6 +70,13 @@ func WithOpenAIMaxRounds(rounds int) OpenAIOption {
 	}
 }
 
+// WithOpenAIAutoTime enables or disables automatic time/chronometer injection into the prompt.
+func WithOpenAIAutoTime(enable bool) OpenAIOption {
+	return func(c *OpenAIClient) {
+		c.autoTime = enable
+	}
+}
+
 // NewOpenAIClient creates a new OpenAI-compatible client.
 func NewOpenAIClient(apiKey, model string, opts ...OpenAIOption) *OpenAIClient {
 	if model == "" {
@@ -80,6 +88,7 @@ func NewOpenAIClient(apiKey, model string, opts ...OpenAIOption) *OpenAIClient {
 		baseURL:      "https://api.openai.com/v1",
 		systemPrompt: DefaultSystemPrompt,
 		maxRounds:    10,
+		autoTime:     true,
 		httpClient:   &http.Client{Timeout: 90 * time.Second},
 	}
 	for _, opt := range opts {
@@ -169,6 +178,9 @@ func (c *OpenAIClient) ExecuteTurn(ctx context.Context, history []ChatMessage, u
 
 	// 1. Prepend system instruction
 	sysPrompt := c.SystemPrompt()
+	if c.autoTime {
+		sysPrompt = BuildTurnSystemPrompt(sysPrompt)
+	}
 	messages = append(messages, openAIMessage{
 		Role:    "system",
 		Content: &sysPrompt,
@@ -255,7 +267,7 @@ func (c *OpenAIClient) ExecuteTurn(ctx context.Context, history []ChatMessage, u
 		// Check if the assistant requested tool calls
 		if len(assistantMsg.ToolCalls) == 0 {
 			if assistantMsg.Content != nil && *assistantMsg.Content != "" {
-				return *assistantMsg.Content, nil
+				return SanitizeReply(*assistantMsg.Content), nil
 			}
 			return "Action completed nominal, Commander.", nil
 		}

@@ -17,6 +17,7 @@ type GeminiClient struct {
 	model        string
 	systemPrompt string
 	maxRounds    int
+	autoTime     bool
 	mcpCaller    MCPCaller
 	httpClient   *http.Client
 	baseURL      string
@@ -68,6 +69,13 @@ func WithGeminiMaxRounds(rounds int) GeminiOption {
 	}
 }
 
+// WithGeminiAutoTime enables or disables automatic time/chronometer injection into the prompt.
+func WithGeminiAutoTime(enable bool) GeminiOption {
+	return func(c *GeminiClient) {
+		c.autoTime = enable
+	}
+}
+
 // NewGeminiClient creates a new Gemini client.
 func NewGeminiClient(apiKey, model string, opts ...GeminiOption) *GeminiClient {
 	if model == "" {
@@ -78,6 +86,7 @@ func NewGeminiClient(apiKey, model string, opts ...GeminiOption) *GeminiClient {
 		model:        model,
 		systemPrompt: DefaultSystemPrompt,
 		maxRounds:    10,
+		autoTime:     true,
 		httpClient:   &http.Client{Timeout: 90 * time.Second},
 		baseURL:      "https://generativelanguage.googleapis.com/v1beta",
 	}
@@ -255,11 +264,15 @@ func (c *GeminiClient) ExecuteTurn(ctx context.Context, history []ChatMessage, u
 		}
 	}
 
+	promptText := c.SystemPrompt()
+	if c.autoTime {
+		promptText = BuildTurnSystemPrompt(promptText)
+	}
 	systemInstruction := &geminiContent{
 		Role: "user",
 		Parts: []geminiPart{
 			{
-				Text: c.SystemPrompt(),
+				Text: promptText,
 			},
 		},
 	}
@@ -315,7 +328,7 @@ func (c *GeminiClient) ExecuteTurn(ctx context.Context, history []ChatMessage, u
 			if len(textParts) == 0 {
 				return "Action completed nominal, Commander.", nil
 			}
-			return strings.Join(textParts, "\n\n"), nil
+			return SanitizeReply(strings.Join(textParts, "\n\n")), nil
 		}
 
 		// Execute function calls via MCP caller

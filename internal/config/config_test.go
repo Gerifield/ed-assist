@@ -477,5 +477,34 @@ max_tool_rounds = 5
 	}
 }
 
+func TestLoadAutoTimeContext(t *testing.T) {
+	// Default should be true
+	def := DefaultConfig()
+	if !def.AutoTimeContext {
+		t.Errorf("expected default AutoTimeContext to be true")
+	}
+
+	tmpDir := t.TempDir()
+	iniPath := filepath.Join(tmpDir, "config.ini")
+
+	content := `
+[general]
+auto_time_context = false
+`
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test ini file: %v", err)
+	}
+
+	cfg, err := Load(iniPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AutoTimeContext {
+		t.Errorf("expected AutoTimeContext to be false, got true")
+	}
+}
+
+
 
 

@@ -264,6 +264,9 @@ system_prompt =
 ; Maximum tool calling rounds per conversation turn to prevent infinite loops (default: 10)
 max_tool_rounds = 10
 
+; Automatically inject current ship chronometer and UTC / in-game Galaxy time into prompt (default: true)
+auto_time_context = true
+
 ; MCP connection mode: "inprocess" (all-in-one), "http" (SSE), or "stdio"
 gemini_mcp_mode = inprocess
 

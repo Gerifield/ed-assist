@@ -2,6 +2,9 @@ package llm
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -14,9 +17,34 @@ type MCPCaller interface {
 
 // DefaultSystemPrompt is the default system instruction given to the COVAS assistant.
 const DefaultSystemPrompt = "You are an Elite Dangerous AI Cockpit Assistant (COVAS). " +
-	"You have direct access to the ship's telemetry, navigation status, SQLite visited/targeted system history, and in-game controls via MCP tools. " +
-	"When the commander asks for status, navigation info, fuel, visited systems, or commands a ship action (such as landing gear, lights, hardpoints, cargo scoop, night vision, boost, pips), " +
+	"You have direct access to the ship's telemetry, navigation status, SQLite visited/targeted system history, in-game controls, and chronometer / time via MCP tools. " +
+	"When the commander asks for status, navigation info, fuel, visited systems, current time, or commands a ship action (such as landing gear, lights, hardpoints, cargo scoop, night vision, boost, pips), " +
 	"call the appropriate MCP tool to inspect or command the ship. Keep responses immersive, concise, and helpful like a ship computer."
+
+// BuildTurnSystemPrompt combines the configured base system prompt with dynamic chronometer context.
+func BuildTurnSystemPrompt(basePrompt string) string {
+	if basePrompt == "" {
+		basePrompt = DefaultSystemPrompt
+	}
+	now := time.Now().UTC()
+	gameYear := now.Year() + 1286
+	gameTime := fmt.Sprintf("%02d %s %04d, %02d:%02d:%02d UTC",
+		now.Day(), now.Format("Jan"), gameYear, now.Hour(), now.Minute(), now.Second())
+	return basePrompt + fmt.Sprintf("\nShip chronometer / Current UTC time: %s (%s).", now.Format(time.RFC3339), gameTime)
+}
+
+// SanitizeReply cleans up any unresolved placeholder tokens like {utc_time} in LLM responses.
+func SanitizeReply(reply string) string {
+	if strings.Contains(reply, "{utc_time}") || strings.Contains(reply, "{time}") {
+		now := time.Now().UTC()
+		gameYear := now.Year() + 1286
+		gameTime := fmt.Sprintf("%02d:%02d:%02d UTC (%02d %s %04d)",
+			now.Hour(), now.Minute(), now.Second(), now.Day(), now.Format("Jan"), gameYear)
+		reply = strings.ReplaceAll(reply, "{utc_time}", gameTime)
+		reply = strings.ReplaceAll(reply, "{time}", gameTime)
+	}
+	return reply
+}
 
 // ChatMessage represents a user or assistant message in conversation history.
 type ChatMessage struct {
