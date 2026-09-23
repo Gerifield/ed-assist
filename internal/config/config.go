@@ -92,7 +92,7 @@ func DefaultConfig() *Config {
 		GeminiModel:    "gemini-flash-lite-latest",
 		OpenAIModel:    "gpt-4o-mini",
 		OpenAIBaseURL:  "https://api.openai.com/v1",
-		GeminiMCPMode:  "http",
+		GeminiMCPMode:  "inprocess",
 		GeminiMCPEndpoint: "http://127.0.0.1:8080/sse",
 		SystemPrompt:   llm.DefaultSystemPrompt,
 		MaxToolRounds:  10,
@@ -417,6 +417,8 @@ func Load(configFileOverride string) (*Config, error) {
 		cfg.AudioInputMode = strings.ToLower(aim)
 	}
 
+	// STT enablement: by default follows audio_input_mode == "transcribe"
+	cfg.STTEnabled = cfg.AudioInputMode == "transcribe"
 	if sttEnStr := lookupProp(props, "stt.enabled", "stt_enabled", "enabled"); sttEnStr != "" {
 		sttLower := strings.ToLower(sttEnStr)
 		cfg.STTEnabled = sttLower == "true" || sttLower == "1" || sttLower == "yes" || sttLower == "on"
