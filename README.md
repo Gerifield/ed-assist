@@ -93,7 +93,38 @@ The Elite Dangerous community has built incredible software over the years. Howe
 
 ---
 
-## Installation & Building
+## 🚀 Quick Start: Web Cockpit Assistant (COVAS)
+
+Get up and running in **under 2 minutes** using pre-built release binaries (no Go installation or compiling required):
+
+1. **Download the Binary**:
+   - Head over to the **[Releases](https://github.com/gerifield/ed-assist/releases)** page and download the executable for your OS:
+     - **Windows**: `ed-assist-web.exe`
+     - **Linux**: `ed-assist-web-linux-amd64`
+2. **Setup `config.ini`**:
+   - Download [`config.ini.example`](config.ini.example), place it in the same directory as the downloaded executable, and rename it to **`config.ini`**.
+3. **Configure API Keys & Controls**:
+   - Open `config.ini` in any text editor (Notepad, VS Code, etc.):
+     - **AI Model & Key**: Add your provider API key (e.g. `gemini_api_key = your-api-key` for Google Gemini, or set `ai_provider = openai` and `openai_api_key = ...`).
+     - **Voice Input / STT** *(Optional)*:
+       - *Easiest (Google Gemini)*: `gemini-flash-lite-latest` natively handles raw microphone audio directly without an extra STT key (`audio_input_mode = native`).
+       - *Whisper Pre-transcription*: For non-multimodal providers (DeepSeek, Ollama, OpenAI) or live HUD bubble transcription, set `groq_api_key = your-groq-key` and `audio_input_mode = transcribe`.
+     - **In-Game Ship Controls** *(Optional)*: To allow COVAS to control cockpit systems (landing gear, cargo scoop, lights, night vision, boost, pips), set:
+       ```ini
+       enable_control = true
+       ```
+       *(ed-assist automatically detects and maps your active in-game keybindings from Elite's `.binds` file)*.
+4. **Launch & Fly!**:
+   - **Windows**: Double-click `ed-assist-web.exe` (or run it from PowerShell / Command Prompt).
+   - **Linux**: Run `./ed-assist-web-linux-amd64`.
+   - Open your web browser and navigate to:
+     👉 **`http://127.0.0.1:3000`**
+
+Your COVAS Cockpit Assistant is ready! You can speak commands via VOX or push-to-record, or type queries directly in the browser HUD.
+
+---
+
+## Installation & Building from Source
 
 Requires **Go 1.24+** (and GNU `make` optionally).
 
@@ -432,8 +463,12 @@ Or specify a dedicated config file:
   - `stdio`: Spawns a local `ed-assist` binary subprocess over stdin/stdout.
 
 ### Launching `ed-assist-web`
+
 ```bash
-# Option 1: Run with Google Gemini
+# Standard: Run with config.ini next to binary (auto-detects keys, models, and controls)
+./bin/ed-assist-web   # or double-click ed-assist-web.exe on Windows
+
+# Option 1: Run with Google Gemini via environment variable
 export GEMINI_API_KEY="your-gemini-api-key"
 ./bin/ed-assist-web
 
