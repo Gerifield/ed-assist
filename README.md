@@ -132,7 +132,6 @@ Open `config.ini` in any text editor (Notepad, VS Code, etc.):
    - 🎙️ *"Status report: check our hull, shields, and fuel."*
    - 🎙️ *"Deploy landing gear and turn on lights."*
    - 🎙️ *"Where are we, and tell me about our destination target system?"*
-   - 🎙️ *"Put four pips into engines and two to shields."*
    - 🎙️ *"Plot a neutron star highway route to Colonia."*
 
 ---
