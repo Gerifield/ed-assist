@@ -29,6 +29,7 @@ Open `config.ini` in any text editor (Notepad, VS Code, Nano, etc.) and update t
 
 ### A. Set Your AI Model & API Key
 - **Google Gemini (Default)**:
+  Get a free API key at **[Google AI Studio](https://aistudio.google.com/)**:
   ```ini
   [ai]
   ai_provider = gemini
@@ -55,7 +56,7 @@ Depending on your AI provider, choose the simplest option:
   ```
 
 - **Groq Whisper Pre-Transcription (For DeepSeek, Ollama, OpenAI, or live HUD bubble text)**  
-  If your AI provider does not support native audio input, or if you prefer having speech transcribed to text before sending:
+  Get a free key at **[Groq Console](https://console.groq.com/keys)**:
   ```ini
   [general]
   audio_input_mode = transcribe
@@ -88,11 +89,12 @@ The console will show that telemetry monitoring and the web server have started.
 
 ## 5. Open in Your Browser
 
-Open your browser and navigate to:
-
-👉 **[http://127.0.0.1:3000](http://127.0.0.1:3000)**
-
-That's it! Your COVAS Cockpit Assistant is ready. You can:
-- **Speak** via Automatic Noise Gate (`VOX`) or Push-to-Record (`REC`).
-- **Type** questions or flight commands directly in the cockpit HUD.
-- Ask for telemetry, ship status, fuel, visited systems, navigation, or give ship commands.
+1. Navigate to: 👉 **[http://127.0.0.1:3000](http://127.0.0.1:3000)**
+2. **Allow Microphone Access**: Click **"Allow"** when your browser prompts for microphone permission.
+3. **VOX Visual Feedback**: Switch on **`VOX`** (or click `REC`). The live audio level bar reacts as you speak and glows red whenever you pass the noise gate threshold.
+4. **Try your first commands**:
+   - 🎙️ *"Status report: check our hull, shields, and fuel."*
+   - 🎙️ *"Deploy landing gear and turn on lights."*
+   - 🎙️ *"Where are we, and tell me about our destination target system?"*
+   - 🎙️ *"Put four pips into engines and two to shields."*
+   - 🎙️ *"Plot a neutron star highway route to Colonia."*

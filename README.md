@@ -97,30 +97,43 @@ The Elite Dangerous community has built incredible software over the years. Howe
 
 Get up and running in **under 2 minutes** using pre-built release binaries (no Go installation or compiling required):
 
-1. **Download the Binary**:
-   - Head over to the **[Releases](https://github.com/gerifield/ed-assist/releases)** page and download the executable for your OS:
-     - **Windows**: `ed-assist-web.exe`
-     - **Linux**: `ed-assist-web-linux-amd64`
-2. **Setup `config.ini`**:
-   - Download [`config.ini.example`](config.ini.example), place it in the same directory as the downloaded executable, and rename it to **`config.ini`**.
-3. **Configure API Keys & Controls**:
-   - Open `config.ini` in any text editor (Notepad, VS Code, etc.):
-     - **AI Model & Key**: Add your provider API key (e.g. `gemini_api_key = your-api-key` for Google Gemini, or set `ai_provider = openai` and `openai_api_key = ...`).
-     - **Voice Input / STT** *(Optional)*:
-       - *Easiest (Google Gemini)*: `gemini-flash-lite-latest` natively handles raw microphone audio directly without an extra STT key (`audio_input_mode = native`).
-       - *Whisper Pre-transcription*: For non-multimodal providers (DeepSeek, Ollama, OpenAI) or live HUD bubble transcription, set `groq_api_key = your-groq-key` and `audio_input_mode = transcribe`.
-     - **In-Game Ship Controls** *(Optional)*: To allow COVAS to control cockpit systems (landing gear, cargo scoop, lights, night vision, boost, pips), set:
-       ```ini
-       enable_control = true
-       ```
-       *(ed-assist automatically detects and maps your active in-game keybindings from Elite's `.binds` file)*.
-4. **Launch & Fly!**:
+### 1. Download the Binary
+Head over to the **[Releases](https://github.com/gerifield/ed-assist/releases)** page and download the executable for your OS:
+- **Windows**: `ed-assist-web.exe`
+- **Linux**: `ed-assist-web-linux-amd64`
+
+### 2. Setup `config.ini`
+Download [`config.ini.example`](config.ini.example), place it in the **same folder as the executable (`ed-assist-web.exe`)**, and rename it to **`config.ini`**.
+
+### 3. Configure API Keys & Controls
+Open `config.ini` in any text editor (Notepad, VS Code, etc.):
+- **AI Model & Key**: Add your provider API key:
+  - *Google Gemini*: Get a free API key at **[Google AI Studio](https://aistudio.google.com/)**, then set `gemini_api_key = AIzaSy...`
+  - *OpenAI-Compatible*: Set `ai_provider = openai`, `openai_api_key = ...` (e.g. Groq, DeepSeek, or local Ollama).
+- **Voice Input / STT** *(Optional)*:
+  - *Easiest (Google Gemini)*: `gemini-flash-lite-latest` natively handles raw microphone audio directly without an extra STT key (`audio_input_mode = native`).
+  - *Whisper Pre-transcription*: For non-multimodal providers (DeepSeek, Ollama) or live HUD bubble transcription, grab a free key at **[Groq Console](https://console.groq.com/keys)**, set `groq_api_key = gsk_...` and `audio_input_mode = transcribe`.
+- **In-Game Ship Controls** *(Optional)*:
+  To allow COVAS to control cockpit systems (landing gear, cargo scoop, lights, night vision, boost, pips), set:
+  ```ini
+  enable_control = true
+  ```
+  *(ed-assist automatically detects and maps your active in-game keybindings from Elite's `.binds` file)*.
+
+### 4. Launch & Fly!
+1. **Start the assistant**:
    - **Windows**: Double-click `ed-assist-web.exe` (or run it from PowerShell / Command Prompt).
    - **Linux**: Run `./ed-assist-web-linux-amd64`.
-   - Open your web browser and navigate to:
-     👉 **`http://127.0.0.1:3000`**
-
-Your COVAS Cockpit Assistant is ready! You can speak commands via VOX or push-to-record, or type queries directly in the browser HUD.
+2. **Open in browser**:
+   Navigate to 👉 **`http://127.0.0.1:3000`**
+3. **Allow Microphone Access**: Click **"Allow"** when your browser prompts for microphone permission.
+4. **VOX Visual Feedback**: Toggle **`VOX`** on. The live audio level bar reacts as you speak and glows red whenever you pass the noise gate threshold.
+5. **Try your first commands**:
+   - 🎙️ *"Status report: check our hull, shields, and fuel."*
+   - 🎙️ *"Deploy landing gear and turn on lights."*
+   - 🎙️ *"Where are we, and tell me about our destination target system?"*
+   - 🎙️ *"Put four pips into engines and two to shields."*
+   - 🎙️ *"Plot a neutron star highway route to Colonia."*
 
 ---
 
