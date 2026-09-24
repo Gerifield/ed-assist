@@ -190,3 +190,52 @@ func TestTrackerBackfillRestartDoesNotDuplicate(t *testing.T) {
 	}
 }
 
+func TestTrackerVehicleEvents(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	statusPath := filepath.Join(tmpDir, "Status.json")
+
+	st, err := store.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed creating store: %v", err)
+	}
+	defer st.Close()
+
+	tr := New(st, statusPath)
+
+	// Initially no vehicle state
+	_, _, _, ok := tr.LatestVehicleState()
+	if ok {
+		t.Errorf("expected no initial vehicle state")
+	}
+
+	// 1. Process LaunchSRV event
+	tr.handleJournalLine([]byte(`{"timestamp":"2026-09-24T16:00:00Z", "event":"LaunchSRV", "PlayerControlled":true}`))
+	mode, event, ts, ok := tr.LatestVehicleState()
+	if !ok || mode != "SRV" || event != "LaunchSRV" {
+		t.Fatalf("expected SRV mode, got mode=%s, event=%s", mode, event)
+	}
+	expectedTime, _ := time.Parse(time.RFC3339, "2026-09-24T16:00:00Z")
+	if !ts.Equal(expectedTime) {
+		t.Errorf("timestamp mismatch: got %v", ts)
+	}
+
+	// 2. Process older event (should not overwrite newer)
+	tr.handleJournalLine([]byte(`{"timestamp":"2026-09-24T15:50:00Z", "event":"LaunchFighter"}`))
+	mode, _, ts, _ = tr.LatestVehicleState()
+	if mode != "SRV" || !ts.Equal(expectedTime) {
+		t.Errorf("older event incorrectly overwrote newer vehicle state")
+	}
+
+	// 3. Process DockSRV event (returning to ship)
+	tr.handleJournalLine([]byte(`{"timestamp":"2026-09-24T16:05:00Z", "event":"DockSRV"}`))
+	mode, event, ts, ok = tr.LatestVehicleState()
+	if !ok || mode != "Ship" || event != "DockSRV" {
+		t.Fatalf("expected Ship mode after DockSRV, got mode=%s, event=%s", mode, event)
+	}
+	dockTime, _ := time.Parse(time.RFC3339, "2026-09-24T16:05:00Z")
+	if !ts.Equal(dockTime) {
+		t.Errorf("expected dockTime 16:05:00, got %v", ts)
+	}
+}
+

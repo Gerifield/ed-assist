@@ -144,3 +144,51 @@ func TestParseEmptyOrInvalid(t *testing.T) {
 		t.Errorf("expected error for invalid json")
 	}
 }
+
+func TestParseNomadSLVAndMainShipPrecedence(t *testing.T) {
+	// Case 1: In Nomad SLV on planetary surface (InFighter + InSRV + Landed + HasLatLong)
+	// 0x02000000 (InFighter) | 0x04000000 (InSRV) | 0x00000002 (Landed) | 0x00200000 (HasLatLong) = 0x06200002 = 102760450
+	nomadJSON := `{
+		"timestamp": "2026-09-24T16:00:00Z",
+		"event": "Status",
+		"Flags": 102760450,
+		"Pips": [4, 4, 4],
+		"FireGroup": 0,
+		"Fuel": {"FuelMain": 2.0, "FuelReservoir": 0.1},
+		"BodyName": "Achenar 3"
+	}`
+	status, err := Parse([]byte(nomadJSON))
+	if err != nil {
+		t.Fatalf("unexpected error parsing nomad status: %v", err)
+	}
+
+	// Should be identified as "Fighter", not "SRV"
+	if status.Mode() != "Fighter" {
+		t.Errorf("expected mode 'Fighter' for Nomad SLV, got '%s'", status.Mode())
+	}
+	activeFlags := status.ActiveFlags()
+	for _, flag := range activeFlags {
+		if flag == "InSRV" {
+			t.Errorf("InSRV flag should not be present in active flags for Fighter/Nomad")
+		}
+	}
+
+	// Case 2: Re-boarded Main Ship (InMainShip bit 24 is set)
+	// 0x01000000 (InMainShip) | 0x00000008 (ShieldsUp) = 0x01000008 = 16777224
+	mainShipJSON := `{
+		"timestamp": "2026-09-24T16:05:00Z",
+		"event": "Status",
+		"Flags": 16777224,
+		"Pips": [4, 4, 4],
+		"FireGroup": 0,
+		"Fuel": {"FuelMain": 32.0, "FuelReservoir": 0.5},
+		"BodyName": "Achenar 3"
+	}`
+	statusShip, err := Parse([]byte(mainShipJSON))
+	if err != nil {
+		t.Fatalf("unexpected error parsing main ship status: %v", err)
+	}
+	if statusShip.Mode() != "Ship" {
+		t.Errorf("expected mode 'Ship' for re-boarded mothership, got '%s'", statusShip.Mode())
+	}
+}

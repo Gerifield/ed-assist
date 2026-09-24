@@ -196,7 +196,21 @@ func main() {
 			}
 		}
 
-		gameController := input.NewController(cfg.BindingsPath, cfg.KeyHoldMs, input.NewKeySender())
+		var gameController *input.Controller
+		if cfg.GameControl {
+			gameController = input.NewController(cfg.BindingsPath, cfg.KeyHoldMs, input.NewKeySender())
+			if err := gameController.Load(); err != nil {
+				slog.Warn("game control enabled but failed loading binds", "error", err)
+			} else {
+				slog.Info("game control active in web assistant",
+					"preset", gameController.PresetName(),
+					"actions", len(gameController.ListActions()),
+					"key_hold_ms", cfg.KeyHoldMs,
+				)
+			}
+		} else {
+			slog.Info("game control disabled (enable with game_control = true in config.ini)")
+		}
 
 		statusReader = reader.New(
 			cfg.StatusFilePath,
@@ -218,7 +232,10 @@ func main() {
 			}()
 		}
 
-		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController, mcpserver.WithCacheTTL(cfg.SystemCacheTTL))
+		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController,
+			mcpserver.WithCacheTTL(cfg.SystemCacheTTL),
+			mcpserver.WithVehicleProvider(sysTracker),
+		)
 		b, err := web.NewInProcessBridge(mcpSrv.Server())
 		if err != nil {
 			slog.Error("failed creating in-process MCP bridge", "error", err)

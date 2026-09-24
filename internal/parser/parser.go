@@ -112,6 +112,7 @@ type Status struct {
 	SelectedWeapon          string        `json:"SelectedWeapon,omitempty"`
 	SelectedWeaponLocalised string        `json:"SelectedWeapon_Localised,omitempty"`
 	Gravity                 *float64      `json:"Gravity,omitempty"`
+	overrideMode            string
 }
 
 // ExpandFlags unpacks bitmasks RawFlags and RawFlags2 into boolean structs Flags and Flags2.
@@ -214,17 +215,22 @@ func (s *Status) ActiveFlags() []string {
 	if s.Flags.ScoopingFuel {
 		active = append(active, "ScoopingFuel")
 	}
-	if s.Flags.SRVHandbrake {
-		active = append(active, "SRVHandbrake")
-	}
-	if s.Flags.SRVTurret {
-		active = append(active, "SRVTurret")
-	}
-	if s.Flags.SRVUnderShip {
-		active = append(active, "SRVUnderShip")
-	}
-	if s.Flags.SRVDriveAssist {
-		active = append(active, "SRVDriveAssist")
+
+	// SRV flags are only active when actually in an SRV (not in main ship or fighter/SLV)
+	isSRV := s.Flags.InSRV && !s.Flags.InMainShip && !s.Flags.InFighter
+	if isSRV {
+		if s.Flags.SRVHandbrake {
+			active = append(active, "SRVHandbrake")
+		}
+		if s.Flags.SRVTurret {
+			active = append(active, "SRVTurret")
+		}
+		if s.Flags.SRVUnderShip {
+			active = append(active, "SRVUnderShip")
+		}
+		if s.Flags.SRVDriveAssist {
+			active = append(active, "SRVDriveAssist")
+		}
 	}
 	if s.Flags.FSDMassLocked {
 		active = append(active, "FSDMassLocked")
@@ -256,7 +262,7 @@ func (s *Status) ActiveFlags() []string {
 	if s.Flags.InFighter {
 		active = append(active, "InFighter")
 	}
-	if s.Flags.InSRV {
+	if isSRV {
 		active = append(active, "InSRV")
 	}
 	if s.Flags.InAnalysisMode {
@@ -271,7 +277,7 @@ func (s *Status) ActiveFlags() []string {
 	if s.Flags.FSDJump {
 		active = append(active, "FSDJump")
 	}
-	if s.Flags.SRVHighBeam {
+	if isSRV && s.Flags.SRVHighBeam {
 		active = append(active, "SRVHighBeam")
 	}
 	return active
@@ -370,19 +376,33 @@ func (s *Status) ParsedTime() (time.Time, error) {
 
 // Mode returns a general description of player mode (Ship, SRV, OnFoot, Fighter).
 func (s *Status) Mode() string {
+	if s.overrideMode != "" {
+		return s.overrideMode
+	}
 	if s.Flags2.OnFoot {
 		return "On Foot"
+	}
+	// InMainShip takes precedence: if in main ship, player is definitely in Ship mode
+	if s.Flags.InMainShip {
+		return "Ship"
+	}
+	// InFighter takes precedence over InSRV (Frontier sets InSRV on Nomad SLV exploration craft)
+	if s.Flags.InFighter {
+		return "Fighter"
 	}
 	if s.Flags.InSRV {
 		return "SRV"
 	}
-	if s.Flags.InFighter {
-		return "Fighter"
-	}
-	if s.Flags.InMainShip {
+	// Fallback heuristic for older/Horizons logs or transitional states
+	if s.Flags.Supercruise || s.Flags.Docked || s.Flags.FSDJump || s.Flags.ScoopingFuel {
 		return "Ship"
 	}
 	return "Unknown"
+}
+
+// SetOverrideMode explicitly overrides the mode (e.g. from newer timestamped Journal events).
+func (s *Status) SetOverrideMode(mode string) {
+	s.overrideMode = mode
 }
 
 // Summary returns a formatted multiline summary of current status.

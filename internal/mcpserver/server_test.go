@@ -510,4 +510,57 @@ func (m *mockFilePathProvider) FilePath() string {
 	return m.filePath
 }
 
+type mockVehicleProvider struct {
+	mode      string
+	event     string
+	timestamp time.Time
+	ok        bool
+}
+
+func (m *mockVehicleProvider) LatestVehicleState() (string, string, time.Time, bool) {
+	return m.mode, m.event, m.timestamp, m.ok
+}
+
+func TestMCPServerJournalVehicleModeOverride(t *testing.T) {
+	// Status.json says player is in an SRV at 16:00:00Z
+	statusJSON := `{
+		"timestamp": "2026-09-24T16:00:00Z",
+		"event": "Status",
+		"Flags": 67108864,
+		"Pips": [4, 4, 4]
+	}`
+	st, err := parser.Parse([]byte(statusJSON))
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+
+	p := &mockProvider{status: st}
+
+	// 1. Without vehicle provider, mode is SRV
+	sNoVP := New(p, nil, nil)
+	gotStatus, err := sNoVP.getStatus()
+	if err != nil || gotStatus.Mode() != "SRV" {
+		t.Fatalf("expected initial mode SRV, got %s (err: %v)", gotStatus.Mode(), err)
+	}
+
+	// 2. With vehicle provider reporting DockSRV at 16:05:00Z (newer than 16:00:00Z)
+	dockTime, _ := time.Parse(time.RFC3339, "2026-09-24T16:05:00Z")
+	vp := &mockVehicleProvider{
+		mode:      "Ship",
+		event:     "DockSRV",
+		timestamp: dockTime,
+		ok:        true,
+	}
+
+	sWithVP := New(p, nil, nil, WithVehicleProvider(vp))
+	gotOverridden, err := sWithVP.getStatus()
+	if err != nil {
+		t.Fatalf("getStatus failed: %v", err)
+	}
+	// Because DockSRV at 16:05 is newer than Status.json at 16:00, mode MUST be Ship!
+	if gotOverridden.Mode() != "Ship" {
+		t.Errorf("expected mode to be overridden to 'Ship', got %s", gotOverridden.Mode())
+	}
+}
+
 

@@ -150,6 +150,9 @@ func (r *Reader) ReadOnce() (*parser.Status, error) {
 		if attempt > 0 {
 			slog.Debug("read Status.json succeeded after retry", "attempt", attempt, "file", r.filePath)
 		}
+		r.mu.Lock()
+		r.updateStatusIfNewer(status)
+		r.mu.Unlock()
 		return status, nil
 	}
 
@@ -260,7 +263,10 @@ func (r *Reader) pollTick() {
 	}
 
 	r.lastHash = currentHash
-	r.lastStatus = status
+	if !r.updateStatusIfNewer(status) {
+		r.mu.Unlock()
+		return
+	}
 	r.mu.Unlock()
 
 	select {
@@ -273,6 +279,21 @@ func (r *Reader) pollTick() {
 		}
 		r.statusChan <- status
 	}
+}
+
+// updateStatusIfNewer updates r.lastStatus only if status has an equal or newer timestamp than existing lastStatus.
+// Must be called with r.mu held.
+func (r *Reader) updateStatusIfNewer(status *parser.Status) bool {
+	if r.lastStatus != nil && status.Timestamp != "" && r.lastStatus.Timestamp != "" {
+		tNew, errNew := time.Parse(time.RFC3339, status.Timestamp)
+		tOld, errOld := time.Parse(time.RFC3339, r.lastStatus.Timestamp)
+		if errNew == nil && errOld == nil && tNew.Before(tOld) {
+			slog.Debug("ignoring status with older timestamp", "new", status.Timestamp, "existing", r.lastStatus.Timestamp)
+			return false
+		}
+	}
+	r.lastStatus = status
+	return true
 }
 
 // Stop signals the reader to stop.
