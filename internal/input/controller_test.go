@@ -68,3 +68,30 @@ func TestControllerExecuteAction(t *testing.T) {
 		t.Fatalf("expected error for non-existent action")
 	}
 }
+
+func TestControllerLoadFallbackToDefault(t *testing.T) {
+	mockSender := &mockKeySender{}
+	// Provide a non-existent directory to simulate user having no custom .binds files
+	ctrl := NewController("/path/to/non_existent/bindings/dir", 80, mockSender)
+
+	err := ctrl.Load()
+	if err != nil {
+		t.Fatalf("expected Load() to succeed with fallback to default bindings, got error: %v", err)
+	}
+
+	if ctrl.PresetName() == "" {
+		t.Errorf("expected non-empty preset name after fallback load")
+	}
+
+	// Should be able to execute standard actions (e.g. landing_gear -> Key_L)
+	res, err := ctrl.ExecuteAction("landing_gear", 0)
+	if err != nil {
+		t.Fatalf("failed executing landing_gear on default bindings: %v", err)
+	}
+	if res.Key != "Key_L" {
+		t.Errorf("expected Key_L, got %s", res.Key)
+	}
+	if len(mockSender.sentKeys) != 1 || mockSender.sentKeys[0].Code != 0x26 {
+		t.Errorf("expected scancode 0x26, got %v", mockSender.sentKeys)
+	}
+}

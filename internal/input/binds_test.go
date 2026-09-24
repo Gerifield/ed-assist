@@ -112,3 +112,66 @@ func TestBindsRegistryParse(t *testing.T) {
 		t.Errorf("expected 6 actions, got %d", len(actions))
 	}
 }
+
+func TestDefaultBindsRegistry(t *testing.T) {
+	reg := NewDefaultBindsRegistry()
+	if reg.PresetName == "" {
+		t.Errorf("expected non-empty preset name")
+	}
+
+	// Verify standard keys exist
+	expectedKeys := map[string]string{
+		"landing_gear": "Key_L",
+		"boost":        "Key_Tab",
+		"pips_sys":     "Key_LeftArrow",
+		"pips_eng":     "Key_UpArrow",
+		"pips_wep":     "Key_RightArrow",
+		"pips_reset":   "Key_DownArrow",
+		"hardpoints":   "Key_U",
+		"cargo_scoop":  "Key_Home",
+		"fsd":          "Key_J",
+		"target":       "Key_T",
+	}
+
+	for alias, expectedKey := range expectedKeys {
+		b, found := reg.GetBinding(alias)
+		if !found {
+			t.Errorf("expected default binding for %s to be found", alias)
+			continue
+		}
+		if b.Binding.Key != expectedKey {
+			t.Errorf("expected key %s for %s, got %s", expectedKey, alias, b.Binding.Key)
+		}
+		if b.Binding.ScanCode.Code == 0 {
+			t.Errorf("expected non-zero scancode for %s", alias)
+		}
+	}
+}
+
+func TestApplyDefaultsToPartialRegistry(t *testing.T) {
+	reg := NewBindsRegistry()
+	_ = reg.ParseReader(strings.NewReader(sampleBindsXML))
+
+	// In sampleBindsXML, EngineBoost (boost) is NOT bound
+	if _, found := reg.GetBinding("boost"); found {
+		t.Errorf("expected boost to not be in sample XML")
+	}
+
+	// Apply defaults
+	reg.ApplyDefaults()
+
+	// Now boost should be populated with default Key_Tab
+	boost, found := reg.GetBinding("boost")
+	if !found {
+		t.Fatalf("expected boost to be populated by ApplyDefaults")
+	}
+	if boost.Binding.Key != "Key_Tab" {
+		t.Errorf("expected Key_Tab, got %s", boost.Binding.Key)
+	}
+
+	// LandingGearToggle from the XML (Key_L) should NOT have been overwritten
+	gear, found := reg.GetBinding("gear")
+	if !found || gear.Binding.Key != "Key_L" {
+		t.Errorf("expected custom landing gear to remain intact")
+	}
+}

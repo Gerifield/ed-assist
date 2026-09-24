@@ -51,14 +51,27 @@ func WithEDAPIClient(client *edapi.Client) Option {
 	}
 }
 
+// VehicleStateProvider provides the latest vehicle state inferred from Journal events.
+type VehicleStateProvider interface {
+	LatestVehicleState() (mode string, event string, timestamp time.Time, ok bool)
+}
+
+// WithVehicleProvider supplies a VehicleStateProvider (e.g. Journal tracker) for event timestamp alignment.
+func WithVehicleProvider(vp VehicleStateProvider) Option {
+	return func(s *MCPServer) {
+		s.vehicleProvider = vp
+	}
+}
+
 // MCPServer wraps the mark3labs MCP server for Elite Dangerous.
 type MCPServer struct {
-	server     *server.MCPServer
-	provider   StatusProvider
-	store      *store.Store
-	controller *input.Controller
-	edapi      *edapi.Client
-	cacheTTL   time.Duration
+	server          *server.MCPServer
+	provider        StatusProvider
+	vehicleProvider VehicleStateProvider
+	store           *store.Store
+	controller      *input.Controller
+	edapi           *edapi.Client
+	cacheTTL        time.Duration
 }
 
 // New creates and configures an MCP server exposing Elite Dangerous game status and controls.
@@ -93,17 +106,40 @@ func New(provider StatusProvider, st *store.Store, ctrl *input.Controller, opts 
 	return s
 }
 
-// getStatus helper retrieves current status from cache or performs a read.
+// getStatus helper retrieves current status from cache (kept fresh in memory by the background reader goroutine),
+// falling back to a direct read only if the cache has not been populated yet.
+// If a Journal event has a newer timestamp than Status.json, the Journal-confirmed vehicle mode takes precedence.
 func (s *MCPServer) getStatus() (*parser.Status, error) {
-	st := s.provider.LastStatus()
-	if st != nil {
-		return st, nil
+	var st *parser.Status
+	// 1. Fast in-memory cache read (maintained by background watcher / polling thread)
+	if last := s.provider.LastStatus(); last != nil {
+		st = last
+	} else {
+		// Fallback to direct read on startup if background tick hasn't run yet
+		fresh, err := s.provider.ReadOnce()
+		if err != nil {
+			return nil, fmt.Errorf("status data is not yet available (is Elite Dangerous running?): %w", err)
+		}
+		st = fresh
 	}
-	// Attempt fresh read if not cached yet
-	st, err := s.provider.ReadOnce()
-	if err != nil {
-		return nil, fmt.Errorf("status data is not yet available (is Elite Dangerous running?): %w", err)
+
+	// 2. Check if a Journal vehicle event (e.g. DockSRV, DockFighter) has a newer timestamp than Status.json
+	if s.vehicleProvider != nil {
+		if jMode, jEvent, jTs, ok := s.vehicleProvider.LatestVehicleState(); ok && !jTs.IsZero() {
+			if stTime, err := st.ParsedTime(); err == nil {
+				if jTs.After(stTime) {
+					slog.Debug("overriding vehicle mode from newer Journal event",
+						"journal_mode", jMode,
+						"journal_event", jEvent,
+						"journal_timestamp", jTs,
+						"status_timestamp", stTime,
+					)
+					st.SetOverrideMode(jMode)
+				}
+			}
+		}
 	}
+
 	return st, nil
 }
 
@@ -179,6 +215,7 @@ func (s *MCPServer) registerTools() {
 
 			payload := map[string]any{
 				"timestamp":  st.Timestamp,
+				"mode":       st.Mode(),
 				"fire_group": st.FireGroup,
 				"gui_focus":  st.GuiFocusName(),
 				"cargo_tons": st.Cargo,
@@ -214,6 +251,7 @@ func (s *MCPServer) registerTools() {
 
 			payload := map[string]any{
 				"timestamp":     st.Timestamp,
+				"mode":          st.Mode(),
 				"body_name":     st.BodyName,
 				"latitude":      st.Latitude,
 				"longitude":     st.Longitude,

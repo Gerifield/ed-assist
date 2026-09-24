@@ -227,7 +227,10 @@ func main() {
 
 	// If MCP mode is enabled, run the MCP server
 	if cfg.EnableMCP {
-		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController, mcpserver.WithCacheTTL(cfg.SystemCacheTTL))
+		mcpSrv := mcpserver.New(statusReader, sqliteStore, gameController,
+			mcpserver.WithCacheTTL(cfg.SystemCacheTTL),
+			mcpserver.WithVehicleProvider(sysTracker),
+		)
 
 		if cfg.MCPTransport == "http" {
 			// In HTTP mode, run MCP server in background and fall through to terminal event display

@@ -67,20 +67,47 @@ func (c *Controller) SetRegistry(reg *BindsRegistry) {
 	}
 }
 
+// PresetName returns the active control scheme preset name.
+func (c *Controller) PresetName() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.registry != nil {
+		return c.registry.PresetName
+	}
+	return ""
+}
+
 // Load loads or reloads the active Elite Dangerous .binds file.
+// If no custom or game .binds file is found, it automatically falls back to the built-in standard default keyboard bindings.
 func (c *Controller) Load() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	bindsFile, err := FindActiveBindsFile(c.bindingsPath)
 	if err != nil {
-		return fmt.Errorf("failed locating active binds: %w", err)
+		slog.Warn("no .binds XML file found; activating built-in standard Elite Dangerous keyboard bindings (Keyboard & Mouse default)",
+			"reason", err.Error(),
+		)
+		c.registry = NewDefaultBindsRegistry()
+		slog.Info("loaded default elite dangerous key bindings",
+			"preset", c.registry.PresetName,
+			"bound_actions", len(c.registry.Bindings),
+		)
+		return nil
 	}
 
 	reg := NewBindsRegistry()
 	if err := reg.ParseFile(bindsFile); err != nil {
-		return fmt.Errorf("failed parsing binds file %s: %w", bindsFile, err)
+		slog.Warn("failed parsing binds file; falling back to built-in default keyboard bindings",
+			"file", bindsFile,
+			"error", err,
+		)
+		c.registry = NewDefaultBindsRegistry()
+		return nil
 	}
+
+	// Apply built-in default bindings for any actions not bound in the custom file
+	reg.ApplyDefaults()
 
 	c.registry = reg
 	slog.Info("loaded elite dangerous key bindings",

@@ -191,3 +191,38 @@ func TestReaderFileNotFoundDoesNotCrash(t *testing.T) {
 	cancel()
 	r.Wait()
 }
+
+func TestReaderIgnoreStaleTimestamp(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "Status.json")
+
+	// 1. Write newer status (10:00:05Z)
+	if err := os.WriteFile(filePath, []byte(sampleStatus2), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	r := New(filePath)
+	st, err := r.ReadOnce()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if st.Timestamp != "2024-03-01T10:00:05Z" {
+		t.Fatalf("expected initial timestamp 10:00:05Z, got %s", st.Timestamp)
+	}
+
+	// 2. Overwrite file with an older status (10:00:00Z)
+	if err := os.WriteFile(filePath, []byte(sampleStatus1), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	// 3. ReadOnce returns the parsed content of the file, but r.LastStatus() must retain the newer status
+	_, err = r.ReadOnce()
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+
+	last := r.LastStatus()
+	if last == nil || last.Timestamp != "2024-03-01T10:00:05Z" {
+		t.Errorf("expected LastStatus() to retain newer timestamp 10:00:05Z, got %v", last.Timestamp)
+	}
+}

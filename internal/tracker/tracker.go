@@ -34,6 +34,13 @@ type JournalEvent struct {
 	JumpDist         *float64   `json:"JumpDist,omitempty"`
 }
 
+// VehicleState holds the latest vehicle state inferred from Journal events with its exact timestamp.
+type VehicleState struct {
+	Mode      string    `json:"mode"`      // "Ship", "SRV", "Fighter", "On Foot"
+	Event     string    `json:"event"`     // "DockSRV", "DockFighter", "LaunchSRV", "LaunchFighter", "Embark", "Disembark", etc.
+	Timestamp time.Time `json:"timestamp"` // exact UTC event timestamp
+}
+
 // Tracker monitors Status.json updates and Journal logs to record visited and targeted systems.
 type Tracker struct {
 	store      *store.Store
@@ -42,6 +49,8 @@ type Tracker struct {
 
 	lastTargetedName string
 	lastTargetedAddr int64
+
+	latestVehicle VehicleState
 
 	currentJournalFile string
 	journalOffset      int64
@@ -237,18 +246,52 @@ func (t *Tracker) handleJournalLine(line []byte) {
 		return
 	}
 
-	// Look for system visit events: FSDJump, Location (startup location), CarrierJump
+	evAt := time.Now().UTC()
+	if ev.Timestamp != "" {
+		if pt, err := time.Parse(time.RFC3339, ev.Timestamp); err == nil {
+			evAt = pt
+		}
+	}
+
+	// 1. Track vehicle state events with exact timestamps
+	var vehicleMode string
+	switch ev.Event {
+	case "DockSRV", "DockFighter", "SupercruiseEntry", "SupercruiseExit", "FSDJump", "Undocked", "Docked":
+		vehicleMode = "Ship"
+	case "LaunchSRV":
+		vehicleMode = "SRV"
+	case "LaunchFighter":
+		vehicleMode = "Fighter"
+	case "Disembark":
+		vehicleMode = "On Foot"
+	case "Embark":
+		if strings.Contains(trimmed, `"SRV":true`) || strings.Contains(trimmed, `"SRV": true`) {
+			vehicleMode = "SRV"
+		} else {
+			vehicleMode = "Ship"
+		}
+	}
+
+	if vehicleMode != "" {
+		t.mu.Lock()
+		if t.latestVehicle.Timestamp.IsZero() || evAt.After(t.latestVehicle.Timestamp) {
+			t.latestVehicle = VehicleState{
+				Mode:      vehicleMode,
+				Event:     ev.Event,
+				Timestamp: evAt,
+			}
+			slog.Debug("journal vehicle state updated", "mode", vehicleMode, "event", ev.Event, "timestamp", evAt)
+		}
+		t.mu.Unlock()
+	}
+
+	// 2. Look for system visit events: FSDJump, Location (startup location), CarrierJump
 	if ev.Event == "FSDJump" || ev.Event == "Location" || ev.Event == "CarrierJump" {
 		if ev.StarSystem == "" && ev.SystemAddress == 0 {
 			return
 		}
 
-		visitedAt := time.Now().UTC()
-		if ev.Timestamp != "" {
-			if pt, err := time.Parse(time.RFC3339, ev.Timestamp); err == nil {
-				visitedAt = pt
-			}
-		}
+		visitedAt := evAt
 
 		var posX, posY, posZ *float64
 		if ev.StarPos != [3]float64{0, 0, 0} {
@@ -273,6 +316,19 @@ func (t *Tracker) handleJournalLine(line []byte) {
 			RawJSON:       trimmed,
 		})
 	}
+}
+
+// LatestVehicleState returns the most recent vehicle state recorded from Journal events.
+func (t *Tracker) LatestVehicleState() (mode string, event string, timestamp time.Time, ok bool) {
+	if t == nil {
+		return "", "", time.Time{}, false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.latestVehicle.Timestamp.IsZero() {
+		return "", "", time.Time{}, false
+	}
+	return t.latestVehicle.Mode, t.latestVehicle.Event, t.latestVehicle.Timestamp, true
 }
 
 // Store returns the underlying sqlite store.
