@@ -176,6 +176,7 @@ func main() {
 	var sqliteStore *store.Store
 	var sysTracker *tracker.Tracker
 
+	var activeStore *store.Store
 	if cfg.EnableTracking {
 		// Initialize local SQLite database next to binary
 		var err error
@@ -188,14 +189,15 @@ func main() {
 			os.Exit(1)
 		}
 		defer sqliteStore.Close()
-
-		// Initialize journal & status tracker for visited and targeted systems
-		sysTracker = tracker.New(sqliteStore, cfg.StatusFilePath)
-		go sysTracker.Start(ctx)
+		activeStore = sqliteStore
 		slog.Info("system tracking enabled", "database", cfg.DBPath)
 	} else {
 		slog.Info("system tracking disabled (use -track to enable)")
 	}
+
+	// Vehicle state & journal tracker: ALWAYS initialize so COVAS knows whether player is in Ship, Nomad, SRV, or On Foot
+	sysTracker = tracker.New(activeStore, cfg.StatusFilePath)
+	go sysTracker.Start(ctx)
 
 	// Initialize game control if enabled in config.ini
 	var gameController *input.Controller

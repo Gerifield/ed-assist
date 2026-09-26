@@ -32,16 +32,32 @@ type JournalEvent struct {
 	Population       *int64     `json:"Population,omitempty"`
 	Body             string     `json:"Body,omitempty"`
 	JumpDist         *float64   `json:"JumpDist,omitempty"`
+
+	// Vehicle fields
+	Ship                string `json:"Ship,omitempty"`
+	ShipName            string `json:"ShipName,omitempty"`
+	ShipType            string `json:"ShipType,omitempty"`
+	VesselType          string `json:"VesselType,omitempty"`
+	VesselTypeLocalised string `json:"VesselTypeLocalised,omitempty"`
+	SRVType             string `json:"SRVType,omitempty"`
+	SRVTypeLocalised    string `json:"SRVType_Localised,omitempty"`
+	Loadout             string `json:"Loadout,omitempty"`
+	PlayerControlled    *bool  `json:"PlayerControlled,omitempty"`
+	To                  string `json:"To,omitempty"`
+	SRV                 *bool  `json:"SRV,omitempty"`
+	Taxi                *bool  `json:"Taxi,omitempty"`
+	Multicrew           *bool  `json:"Multicrew,omitempty"`
 }
 
 // VehicleState holds the latest vehicle state inferred from Journal events with its exact timestamp.
 type VehicleState struct {
-	Mode      string    `json:"mode"`      // "Ship", "SRV", "Fighter", "On Foot"
-	Event     string    `json:"event"`     // "DockSRV", "DockFighter", "LaunchSRV", "LaunchFighter", "Embark", "Disembark", etc.
+	Mode      string    `json:"mode"`      // "Ship", "Nomad", "SRV", "Fighter", "On Foot"
+	Event     string    `json:"event"`     // "DockSRV", "DockFighter", "DockVessel", "LaunchSRV", "LaunchFighter", "LaunchVessel", "Embark", "Disembark", etc.
 	Timestamp time.Time `json:"timestamp"` // exact UTC event timestamp
 }
 
-// Tracker monitors Status.json updates and Journal logs to record visited and targeted systems.
+// Tracker monitors Status.json updates and Journal logs to record visited and targeted systems,
+// as well as authoritative player vehicle state (Ship, Nomad, SRV, Fighter, On Foot).
 type Tracker struct {
 	store      *store.Store
 	journalDir string
@@ -50,10 +66,53 @@ type Tracker struct {
 	lastTargetedName string
 	lastTargetedAddr int64
 
-	latestVehicle VehicleState
+	latestVehicle   VehicleState
+	deployedVehicle string // "Nomad", "SRV", "Fighter", or "" (docked in ship)
 
 	currentJournalFile string
 	journalOffset      int64
+}
+
+// isLanderOrNomad checks if strings contain markers for the Nomad SLV (Falcon DeLacy Lander01).
+func isLanderOrNomad(strs ...string) bool {
+	for _, s := range strs {
+		if s == "" {
+			continue
+		}
+		low := strings.ToLower(s)
+		if strings.Contains(low, "nomad") || strings.Contains(low, "lander") || low == "base" || strings.Contains(low, "base_nomad") || strings.Contains(low, "base_lander") {
+			return true
+		}
+	}
+	return false
+}
+
+// isSRV checks if strings indicate a surface reconnaissance vehicle (Scarab or Scorpion).
+func isSRV(strs ...string) bool {
+	for _, s := range strs {
+		if s == "" {
+			continue
+		}
+		low := strings.ToLower(s)
+		if strings.Contains(low, "buggy") || strings.Contains(low, "scarab") || strings.Contains(low, "scorpion") || strings.Contains(low, "srv") {
+			return true
+		}
+	}
+	return false
+}
+
+// isFighter checks if strings indicate a ship-launched combat fighter (Condor, Taipan, Imperial Fighter, etc.).
+func isFighter(strs ...string) bool {
+	for _, s := range strs {
+		if s == "" {
+			continue
+		}
+		low := strings.ToLower(s)
+		if strings.Contains(low, "fighter") || strings.Contains(low, "condor") || strings.Contains(low, "taipan") || strings.Contains(low, "trident") || strings.Contains(low, "javelin") || strings.Contains(low, "lance") {
+			return true
+		}
+	}
+	return false
 }
 
 // New creates a new Tracker.
@@ -87,19 +146,21 @@ func (t *Tracker) ProcessStatus(st *parser.Status) {
 				targetedAt = pt
 			}
 
-			raw, _ := json.Marshal(st.Destination)
-			_ = t.store.RecordTargeted(store.TargetedSystem{
-				SystemName:    st.Destination.Name,
-				SystemAddress: st.Destination.System,
-				BodyID:        st.Destination.Body,
-				TargetedAt:    targetedAt,
-				RawJSON:       string(raw),
-			})
+			if t.store != nil {
+				raw, _ := json.Marshal(st.Destination)
+				_ = t.store.RecordTargeted(store.TargetedSystem{
+					SystemName:    st.Destination.Name,
+					SystemAddress: st.Destination.System,
+					BodyID:        st.Destination.Body,
+					TargetedAt:    targetedAt,
+					RawJSON:       string(raw),
+				})
+			}
 		}
 	}
 }
 
-// Start begins monitoring Journal logs in journalDir to track visited systems.
+// Start begins monitoring Journal logs in journalDir to track visited systems and vehicle states.
 func (t *Tracker) Start(ctx context.Context) {
 	// 1. Initial backfill from existing journal files
 	t.backfillRecentJournals()
@@ -145,7 +206,10 @@ func (t *Tracker) backfillRecentJournals() {
 	// Sort files by name (which has ISO date embedded) ascending
 	sort.Strings(files)
 
-	latestDBTime := t.store.GetLatestVisitedTime()
+	var latestDBTime time.Time
+	if t.store != nil {
+		latestDBTime = t.store.GetLatestVisitedTime()
+	}
 
 	// Take up to the last 5 journal files to backfill up to 100 systems
 	startIdx := 0
@@ -253,40 +317,128 @@ func (t *Tracker) handleJournalLine(line []byte) {
 		}
 	}
 
-	// 1. Track vehicle state events with exact timestamps
+	// 1. Authoritative vehicle tracking across all vehicle launch, dock, embark, disembark, and jump events
 	var vehicleMode string
 	switch ev.Event {
-	case "DockSRV", "DockFighter", "SupercruiseEntry", "SupercruiseExit", "FSDJump", "Undocked", "Docked":
-		vehicleMode = "Ship"
-	case "LaunchSRV":
-		vehicleMode = "SRV"
-	case "LaunchFighter":
-		vehicleMode = "Fighter"
-	case "Disembark":
-		vehicleMode = "On Foot"
-	case "Embark":
-		if strings.Contains(trimmed, `"SRV":true`) || strings.Contains(trimmed, `"SRV": true`) {
-			vehicleMode = "SRV"
+	case "LaunchVessel":
+		// Dedicated Frontier journal event for the Nomad SLV exploration vessel
+		if isLanderOrNomad(ev.VesselType, ev.VesselTypeLocalised, ev.Loadout) || ev.VesselType == "" {
+			vehicleMode = "Nomad"
 		} else {
+			vehicleMode = "Fighter"
+		}
+
+	case "LaunchFighter":
+		// If loadout or vehicle specifies Nomad / Lander, it's the Nomad SLV
+		if isLanderOrNomad(ev.Loadout, ev.VesselType, ev.VesselTypeLocalised) {
+			vehicleMode = "Nomad"
+		} else {
+			vehicleMode = "Fighter"
+		}
+
+	case "LaunchSRV":
+		// Check for potential Nomad / Lander loadout or SRV variant
+		if isLanderOrNomad(ev.SRVType, ev.SRVTypeLocalised, ev.Loadout) {
+			vehicleMode = "Nomad"
+		} else {
+			vehicleMode = "SRV"
+		}
+
+	case "DockSRV", "DockFighter", "DockVessel":
+		// Docked back into mothership
+		vehicleMode = "Ship"
+
+	case "VehicleSwitch":
+		if strings.EqualFold(ev.To, "Mothership") {
+			vehicleMode = "Ship"
+		} else if strings.EqualFold(ev.To, "Fighter") {
+			t.mu.Lock()
+			dep := t.deployedVehicle
+			t.mu.Unlock()
+			if dep == "Nomad" {
+				vehicleMode = "Nomad"
+			} else {
+				vehicleMode = "Fighter"
+			}
+		}
+
+	case "SupercruiseEntry", "SupercruiseExit", "FSDJump", "CarrierJump", "Undocked":
+		// Supercruise / hyperspace can only occur in the main ship
+		vehicleMode = "Ship"
+
+	case "Disembark":
+		// Commander stepped out on foot
+		vehicleMode = "On Foot"
+
+	case "Embark":
+		t.mu.Lock()
+		dep := t.deployedVehicle
+		t.mu.Unlock()
+
+		if (ev.SRV != nil && *ev.SRV) || strings.Contains(trimmed, `"SRV":true`) || strings.Contains(trimmed, `"SRV": true`) {
+			// Frontier puts SRV: true when embarking into Nomad on planet surface!
+			if dep == "Nomad" || isLanderOrNomad(ev.SRVType, ev.SRVTypeLocalised) {
+				vehicleMode = "Nomad"
+			} else {
+				vehicleMode = "SRV"
+			}
+		} else if ev.Taxi != nil && *ev.Taxi {
+			vehicleMode = "Ship"
+		} else {
+			// Re-embarked into mothership
 			vehicleMode = "Ship"
 		}
+
+	case "Loadout", "LoadGame":
+		if ev.Ship != "" {
+			if isLanderOrNomad(ev.Ship, ev.ShipName, ev.ShipType) {
+				vehicleMode = "Nomad"
+			} else if isSRV(ev.Ship, ev.ShipType) {
+				vehicleMode = "SRV"
+			} else if isFighter(ev.Ship, ev.ShipType) {
+				vehicleMode = "Fighter"
+			} else if !strings.Contains(strings.ToLower(ev.Ship), "suit") && !strings.Contains(strings.ToLower(ev.Ship), "taxi") {
+				vehicleMode = "Ship"
+			}
+		}
+
+	case "SRVDestroyed", "FighterDestroyed":
+		vehicleMode = "Ship"
 	}
 
 	if vehicleMode != "" {
 		t.mu.Lock()
-		if t.latestVehicle.Timestamp.IsZero() || evAt.After(t.latestVehicle.Timestamp) {
+		if t.latestVehicle.Timestamp.IsZero() || !evAt.Before(t.latestVehicle.Timestamp) {
 			t.latestVehicle = VehicleState{
 				Mode:      vehicleMode,
 				Event:     ev.Event,
 				Timestamp: evAt,
 			}
-			slog.Debug("journal vehicle state updated", "mode", vehicleMode, "event", ev.Event, "timestamp", evAt)
+			// Maintain deployed vehicle identity across disembark / embark loops
+			switch vehicleMode {
+			case "Nomad":
+				t.deployedVehicle = "Nomad"
+			case "SRV":
+				t.deployedVehicle = "SRV"
+			case "Fighter":
+				t.deployedVehicle = "Fighter"
+			case "Ship":
+				t.deployedVehicle = ""
+			case "On Foot":
+				// Retain deployedVehicle so Embark can recover whether player was in Nomad or SRV
+			}
+			slog.Debug("journal vehicle state updated",
+				"mode", vehicleMode,
+				"event", ev.Event,
+				"deployed", t.deployedVehicle,
+				"timestamp", evAt,
+			)
 		}
 		t.mu.Unlock()
 	}
 
 	// 2. Look for system visit events: FSDJump, Location (startup location), CarrierJump
-	if ev.Event == "FSDJump" || ev.Event == "Location" || ev.Event == "CarrierJump" {
+	if (ev.Event == "FSDJump" || ev.Event == "Location" || ev.Event == "CarrierJump") && t.store != nil {
 		if ev.StarSystem == "" && ev.SystemAddress == 0 {
 			return
 		}
