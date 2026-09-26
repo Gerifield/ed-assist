@@ -237,5 +237,41 @@ func TestTrackerVehicleEvents(t *testing.T) {
 	if !ts.Equal(dockTime) {
 		t.Errorf("expected dockTime 16:05:00, got %v", ts)
 	}
+
+	// 4. Test Nomad SLV LaunchVessel
+	tr.handleJournalLine([]byte(`{"timestamp":"2026-09-24T16:10:00Z", "event":"LaunchVessel", "VesselType":"Lander01", "VesselTypeLocalised":"Nomad", "PlayerControlled":true}`))
+	mode, event, _, ok = tr.LatestVehicleState()
+	if !ok || mode != "Nomad" || event != "LaunchVessel" {
+		t.Fatalf("expected Nomad mode after LaunchVessel, got mode=%s, event=%s", mode, event)
+	}
+
+	// 5. Test Disembark on foot
+	tr.handleJournalLine([]byte(`{"timestamp":"2026-09-24T16:15:00Z", "event":"Disembark", "SRV":false}`))
+	mode, event, _, ok = tr.LatestVehicleState()
+	if !ok || mode != "On Foot" || event != "Disembark" {
+		t.Fatalf("expected On Foot mode after Disembark, got mode=%s, event=%s", mode, event)
+	}
+
+	// 6. Test Embark back into Nomad on surface (Frontier sets SRV: true)
+	tr.handleJournalLine([]byte(`{"timestamp":"2026-09-24T16:20:00Z", "event":"Embark", "SRV":true}`))
+	mode, event, _, ok = tr.LatestVehicleState()
+	if !ok || mode != "Nomad" || event != "Embark" {
+		t.Fatalf("expected Nomad mode after Embark (recovering deployed Nomad), got mode=%s, event=%s", mode, event)
+	}
+
+	// 7. Test DockSRV for Nomad returning to mothership
+	tr.handleJournalLine([]byte(`{"timestamp":"2026-09-24T16:25:00Z", "event":"DockSRV", "SRVType":"Lander01", "SRVType_Localised":"Nomad"}`))
+	mode, event, _, ok = tr.LatestVehicleState()
+	if !ok || mode != "Ship" || event != "DockSRV" {
+		t.Fatalf("expected Ship mode after Nomad docked, got mode=%s, event=%s", mode, event)
+	}
+
+	// 8. Test Tracker with nil store (tracking disabled mode)
+	trNilStore := New(nil, statusPath)
+	trNilStore.handleJournalLine([]byte(`{"timestamp":"2026-09-24T16:30:00Z", "event":"LaunchFighter", "Loadout":"lander_base", "PlayerControlled":true}`))
+	mode, event, _, ok = trNilStore.LatestVehicleState()
+	if !ok || mode != "Nomad" {
+		t.Fatalf("expected Nomad mode with nil store, got mode=%s, event=%s", mode, event)
+	}
 }
 

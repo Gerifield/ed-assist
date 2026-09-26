@@ -247,7 +247,7 @@ func DefaultKeyboardBindings() map[string]BindingKey {
 		"ToggleCargoScoop":       {Device: "Keyboard", Key: "Key_Home", ScanCode: ScanCode{Code: 0x47, Extended: true}},
 		"DeployHardpointToggle":  {Device: "Keyboard", Key: "Key_U", ScanCode: ScanCode{Code: 0x16}},
 		"ShipSpotLightToggle":    {Device: "Keyboard", Key: "Key_Insert", ScanCode: ScanCode{Code: 0x52, Extended: true}},
-		"NightVisionToggle":      {Device: "Keyboard", Key: "Key_Insert", Modifiers: []string{"Key_LeftShift"}, ScanCode: ScanCode{Code: 0x52, Extended: true}, ModifierScanCodes: []ScanCode{{Code: 0x2A}}},
+		"NightVisionToggle":      {Device: "Keyboard", Key: "Key_N", Modifiers: []string{"Key_LeftShift"}, ScanCode: ScanCode{Code: 0x31}, ModifierScanCodes: []ScanCode{{Code: 0x2A}}},
 		"ToggleFlightAssist":     {Device: "Keyboard", Key: "Key_Z", ScanCode: ScanCode{Code: 0x2C}},
 		"HyperSuperCombination":  {Device: "Keyboard", Key: "Key_J", ScanCode: ScanCode{Code: 0x24}},
 		"Hyperspace":             {Device: "Keyboard", Key: "Key_H", Modifiers: []string{"Key_LeftShift"}, ScanCode: ScanCode{Code: 0x23}, ModifierScanCodes: []ScanCode{{Code: 0x2A}}},

@@ -190,11 +190,15 @@ func main() {
 		} else {
 			sqliteStore = st
 			defer sqliteStore.Close()
-			if cfg.EnableTracking {
-				sysTracker = tracker.New(sqliteStore, cfg.StatusFilePath)
-				go sysTracker.Start(ctx)
-			}
 		}
+
+		// Vehicle state & journal tracker: ALWAYS initialize so COVAS knows whether player is in Ship, Nomad, SRV, or On Foot
+		var activeStore *store.Store
+		if cfg.EnableTracking {
+			activeStore = sqliteStore
+		}
+		sysTracker = tracker.New(activeStore, cfg.StatusFilePath)
+		go sysTracker.Start(ctx)
 
 		var gameController *input.Controller
 		if cfg.GameControl {

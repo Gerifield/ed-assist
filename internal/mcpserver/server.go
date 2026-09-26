@@ -123,19 +123,23 @@ func (s *MCPServer) getStatus() (*parser.Status, error) {
 		st = fresh
 	}
 
-	// 2. Check if a Journal vehicle event (e.g. DockSRV, DockFighter) has a newer timestamp than Status.json
+	// 2. Synchronize vehicle mode with authoritative Journal tracking
 	if s.vehicleProvider != nil {
-		if jMode, jEvent, jTs, ok := s.vehicleProvider.LatestVehicleState(); ok && !jTs.IsZero() {
-			if stTime, err := st.ParsedTime(); err == nil {
-				if jTs.After(stTime) {
-					slog.Debug("overriding vehicle mode from newer Journal event",
-						"journal_mode", jMode,
-						"journal_event", jEvent,
-						"journal_timestamp", jTs,
-						"status_timestamp", stTime,
-					)
-					st.SetOverrideMode(jMode)
-				}
+		if jMode, jEvent, jTs, ok := s.vehicleProvider.LatestVehicleState(); ok && jMode != "" {
+			// Real-time OnFoot flag in Status.json takes priority when commander is outside
+			if st.Flags2.OnFoot {
+				st.SetOverrideMode("On Foot")
+			} else if st.Flags.Supercruise || st.Flags.FSDJump {
+				// Supercruise or hyperspace jump can only be performed by the main ship
+				st.SetOverrideMode("Ship")
+			} else {
+				// Inside a vehicle: Journal event provides authoritative vehicle type (Nomad, Ship, SRV, Fighter)
+				slog.Debug("setting vehicle mode from Journal tracker",
+					"journal_mode", jMode,
+					"journal_event", jEvent,
+					"journal_timestamp", jTs,
+				)
+				st.SetOverrideMode(jMode)
 			}
 		}
 	}
@@ -147,7 +151,7 @@ func (s *MCPServer) registerTools() {
 	// Tool 1: get_status (Full status)
 	s.server.AddTool(
 		mcp.NewTool("get_status",
-			mcp.WithDescription("Get the complete live status of the player, ship/SRV, cockpit, and navigation target from Elite Dangerous as JSON"),
+			mcp.WithDescription("Get the complete live status of the player, ship/SRV/Nomad SLV, cockpit, and navigation target from Elite Dangerous as JSON"),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			st, err := s.getStatus()
@@ -176,10 +180,10 @@ func (s *MCPServer) registerTools() {
 		},
 	)
 
-	// Tool 3: get_ship_status (Ship/SRV mode, active flags)
+	// Tool 3: get_ship_status (Ship/Nomad/SRV/Fighter mode, active flags)
 	s.server.AddTool(
 		mcp.NewTool("get_ship_status",
-			mcp.WithDescription("Get ship and vehicle flight state: current mode (Ship/SRV/Fighter/On Foot), legal state, and active flags (docked, landed, gear, shields, supercruise, hardpoints, FAOff, silent running, etc.)"),
+			mcp.WithDescription("Get ship and vehicle flight state: current mode (Ship/Nomad/SRV/Fighter/On Foot), legal state, and active flags (docked, landed, gear, shields, supercruise, hardpoints, FAOff, silent running, etc.)"),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			st, err := s.getStatus()

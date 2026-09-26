@@ -216,8 +216,9 @@ func (s *Status) ActiveFlags() []string {
 		active = append(active, "ScoopingFuel")
 	}
 
-	// SRV flags are only active when actually in an SRV (not in main ship or fighter/SLV)
-	isSRV := s.Flags.InSRV && !s.Flags.InMainShip && !s.Flags.InFighter
+	// SRV flags are only active when actually in an SRV (not in main ship, fighter, or Nomad SLV)
+	mode := s.Mode()
+	isSRV := (mode == "SRV") || (s.Flags.InSRV && !s.Flags.InMainShip && !s.Flags.InFighter && mode != "Nomad" && mode != "Ship")
 	if isSRV {
 		if s.Flags.SRVHandbrake {
 			active = append(active, "SRVHandbrake")
@@ -256,13 +257,15 @@ func (s *Status) ActiveFlags() []string {
 	if s.Flags.BeingInterdicted {
 		active = append(active, "BeingInterdicted")
 	}
-	if s.Flags.InMainShip {
+	if s.Flags.InMainShip || mode == "Ship" {
 		active = append(active, "InMainShip")
 	}
-	if s.Flags.InFighter {
+	if s.Flags.InFighter || mode == "Fighter" {
 		active = append(active, "InFighter")
 	}
-	if isSRV {
+	if mode == "Nomad" {
+		active = append(active, "InNomad")
+	} else if isSRV {
 		active = append(active, "InSRV")
 	}
 	if s.Flags.InAnalysisMode {

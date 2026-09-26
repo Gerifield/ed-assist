@@ -543,7 +543,7 @@ func TestMCPServerJournalVehicleModeOverride(t *testing.T) {
 		t.Fatalf("expected initial mode SRV, got %s (err: %v)", gotStatus.Mode(), err)
 	}
 
-	// 2. With vehicle provider reporting DockSRV at 16:05:00Z (newer than 16:00:00Z)
+	// 2. With vehicle provider reporting DockSRV, mode MUST be Ship even if Status.json updates later
 	dockTime, _ := time.Parse(time.RFC3339, "2026-09-24T16:05:00Z")
 	vp := &mockVehicleProvider{
 		mode:      "Ship",
@@ -557,9 +557,24 @@ func TestMCPServerJournalVehicleModeOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getStatus failed: %v", err)
 	}
-	// Because DockSRV at 16:05 is newer than Status.json at 16:00, mode MUST be Ship!
 	if gotOverridden.Mode() != "Ship" {
 		t.Errorf("expected mode to be overridden to 'Ship', got %s", gotOverridden.Mode())
+	}
+
+	// 3. With vehicle provider reporting Nomad, mode MUST be Nomad
+	vpNomad := &mockVehicleProvider{
+		mode:      "Nomad",
+		event:     "LaunchVessel",
+		timestamp: dockTime,
+		ok:        true,
+	}
+	sWithVPNomad := New(p, nil, nil, WithVehicleProvider(vpNomad))
+	gotNomad, err := sWithVPNomad.getStatus()
+	if err != nil {
+		t.Fatalf("getStatus failed: %v", err)
+	}
+	if gotNomad.Mode() != "Nomad" {
+		t.Errorf("expected mode to be overridden to 'Nomad', got %s", gotNomad.Mode())
 	}
 }
 
