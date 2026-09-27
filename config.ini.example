@@ -40,7 +40,7 @@ mcp_addr = 127.0.0.1:8080
 
 ; Optional system tracking (visited systems & targeted destinations in SQLite)
 ; Set to true or launch with -track to enable
-enable_tracking = false
+enable_tracking = true
 
 ; Maximum number of visited star systems to retain in SQLite history (default: 100)
 max_visited_systems = 100
@@ -54,7 +54,7 @@ db_path =
 
 ; Optional in-game control via DirectInput hardware scancodes and active .binds file
 ; Enables MCP tools: send_game_command and list_game_commands
-game_control = false
+game_control = true
 
 ; Key press hold duration in milliseconds (default: 80ms, minimum recommended: 50-100ms)
 key_hold_ms = 80
@@ -153,7 +153,7 @@ voice_silence_ms = 2000
 
 ; Acoustic echo protection: automatically suppress VOX microphone trigger while COVAS
 ; reads aloud through speakers to prevent microphone loopback (true / false, default: true)
-voice_echo_protection = true
+voice_echo_protection = false
 
 
 ; Galaxy intelligence external API cache time in hours (EDSM / Spansh)
