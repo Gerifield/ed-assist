@@ -24,12 +24,6 @@ Open `config.ini` in any text editor (Notepad, VS Code, etc.):
 - **Voice Input / STT** *(Optional)*:
   - *Easiest (Google Gemini)*: `gemini-flash-lite-latest` natively handles raw microphone audio directly without an extra STT key (`audio_input_mode = native`).
   - *Whisper Pre-transcription*: For non-multimodal providers (DeepSeek, Ollama) or live HUD bubble transcription, grab a free key at **[Groq Console](https://console.groq.com/keys)**, set `groq_api_key = gsk_...` and `audio_input_mode = transcribe`.
-- **In-Game Ship Controls** *(Optional)*:
-  To allow COVAS to control cockpit systems (landing gear, cargo scoop, lights, night vision, boost, pips), set:
-  ```ini
-  enable_control = true
-  ```
-  *(ed-assist automatically detects and maps your active in-game keybindings from Elite's `.binds` file)*.
 
 ### 4. Launch & Fly!
 1. **Start the assistant**:
